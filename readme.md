@@ -9,6 +9,31 @@
 This repository holds the source code for the baselines of the `The 2nd e-Prevention challenge: Psychotic and Non-Psychotic Relapse Detection using Wearable-Based Digital Phenotyping` organized in context of [ICASSP 2024](https://2024.ieeeicassp.org/). The Challenge website can be found in [https://robotics.ntua.gr/icassp2024-eprevention-spgc/](https://robotics.ntua.gr/icassp2024-eprevention-spgc/).
 
 
+## LDV Data Setup
+
+1) Change directory to: `$cd /var/tmp/YOUR-NAME`
+
+2) Download data set from NextCloud (>100 GB) via
+    ```
+    curl "https://nextcloud.cit.tum.de/index.php/s/g3ndP8DXqnSycab/download" --output icassp2024-data.zip
+    ```
+
+3) Unzip via: 
+   ```
+   unzip icassp2024-challenge.zip
+   ```
+
+4) Create symbolic link for track 1:
+   ``` 
+    ln -s /var/tmp/YOUR-NAME/spgc-eprevention-icassp2024/track_1 YOUR-GIT-DIRECTORY/spgc-eprevention-icassp2024/data 
+   ```
+   
+   Create symbolic link for track 2:
+   ``` 
+    ln -s /var/tmp/YOUR-NAME/spgc-eprevention-icassp2024/track_2 YOUR-GIT-DIRECTORY/spgc-eprevention-icassp2024/data 
+   ```
+
+
 ### Registration
 To register for the challenge and get access to the challenge data participants are required to send an e-mail to the below contacts with the team name, the names of their team members, as well as their emails and affiliations.
 

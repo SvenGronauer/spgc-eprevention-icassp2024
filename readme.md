@@ -58,7 +58,7 @@ The dataset for each track has the following format:
 
 3) Unzip via: 
    ```
-   unzip icassp2024-challenge.zip
+   unzip icassp2024-data.zip
    ```
 
 4) Create symbolic link for track 1:

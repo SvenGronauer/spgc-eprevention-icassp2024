@@ -249,15 +249,14 @@ and for track2 run:
 python extract_features.py --dataset_path data/track2/ --out_features_path data/track2_features/
 ```
 
-##### Download pre-processed dataset @ LDV
+#### Download pre-processed dataset @ LDV
 
 To save time, you can download the preprocessed data set from NextCloud via
 
-    ```
     curl "https://nextcloud.cit.tum.de/index.php/s/gEaqnf4zfy2zpRZ/download" --output icassp2024-data-preprocessed.zip
-    ```
+    
 
-Unzip as in `HPC Data Setup` above.
+Unzip as in [HPC Data Setup]((#hpc-data-setup-@-ldv)) above.
 
 Note that the pre-processed features only include `gyr`, `hrm`and `linacc` data, but not `sleep` and `step`. 
 

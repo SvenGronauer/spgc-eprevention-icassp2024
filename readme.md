@@ -264,13 +264,13 @@ Note that the pre-processed features only include `gyr`, `hrm`and `linacc` data,
 To train the Transformer Encoder classifier for track1 run the following command:
 
 ```bash
-python train.py --num_patients 9 --window_size 24 --save_path track1_win24_l2_d32 --features_path data/track1_features/ --dataset_path data/track1/ --d_model 32 --nlayers 2
+python train.py --num_patients 9 --window_size 24 --save_path track1_win24_l2_d32 --features_path data/track_1_features/ --dataset_path data/track_1/ --d_model 32 --nlayers 2
 ```
 
 and for track 2 run:
 
 ```bash
-python train.py --num_patients 8 --window_size 48 --save_path track2_win48_l2_d32 --features_path data/track2_features/ --dataset_path data/track2/ --d_model 32 --nlayers 2
+python train.py --num_patients 8 --window_size 48 --save_path track2_win48_l2_d32 --features_path data/track_2_features/ --dataset_path data/track_2/ --d_model 32 --nlayers 2
 ```
 
 During training the model also at each epoch trains the OneClassSVMs and outputs metrics for the validation set. Note that the validation metrics here do not correspond to the official metrics of the challenge (because we ignore days with limited/missing data), but are used only for finding the best model which will be used subsequently for testing and creating the submission.

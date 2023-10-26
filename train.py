@@ -7,6 +7,23 @@ from trainer import Trainer
 import pickle
 import os
 
+
+def get_device(device_str="auto") -> str:
+    if device_str == "auto":
+        if torch.cuda.is_available():
+            torch.set_default_tensor_type(torch.cuda.FloatTensor)
+            return "cuda"
+        else:
+            return "cpu"
+    else:
+        try:
+            torch.device(device_str)
+            return device_str
+        except Exception as e:
+            print("handling device error:")
+            print(e)
+
+
 def parse():
     '''Returns args passed to the train.py script.'''
     parser = argparse.ArgumentParser()
@@ -37,8 +54,8 @@ def parse():
     # checkpoint
     parser.add_argument('--save_path', type=str, help='path to save model checkpoints', default='checkpoints')
 
-
-    parser.add_argument('--device', type=str, help='device to use (cpu, cuda, cuda[number])', default='cuda')
+    default_device = get_device()
+    parser.add_argument('--device', type=str, help='device to use (cpu, cuda, cuda[number])', default=default_device)
 
     args = parser.parse_args()
     args.seq_len = args.window_size

@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch import Tensor
 import torch.nn.functional as F
 
+
 class PositionalEncoding(nn.Module):
 
     def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
@@ -24,6 +25,49 @@ class PositionalEncoding(nn.Module):
         """
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
+
+
+class EnsembleLinear(nn.Module):
+    __constants__ = ['in_features', 'out_features']
+    in_features: int
+    out_features: int
+    ensemble_size: int
+    weight: torch.Tensor
+
+    def __init__(self, in_features: int, out_features: int, ensemble_size: int, weight_decay: float = 0., bias: bool = True) -> None:
+        super(EnsembleLinear, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.ensemble_size = ensemble_size
+        self.lin_w = nn.Parameter(torch.Tensor(ensemble_size, in_features, out_features))
+        self.weight_decay = weight_decay
+        if bias:
+            self.lin_b = nn.Parameter(torch.Tensor(ensemble_size, out_features))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        batched_inputs = x[None, :, :].repeat([self.ensemble_size, 1, 1])
+
+        w_times_x = torch.bmm(batched_inputs, self.lin_w)
+        return torch.add(w_times_x, self.lin_b[:, None, :])  # w times x + b
+
+    def extra_repr(self) -> str:
+        return 'in_features={}, out_features={}, bias={}'.format(
+            self.in_features, self.out_features, self.lin_b is not None
+        )
+
+    def reset_parameters(self) -> None:
+        # Setting a=sqrt(5) in kaiming_uniform is the same as initializing with
+        # uniform(-1/sqrt(in_features), 1/sqrt(in_features)). For details, see
+        # https://github.com/pytorch/pytorch/issues/57109
+        nn.init.kaiming_uniform_(self.lin_w, a=math.sqrt(5))
+        if self.lin_b is not None:
+            fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.lin_w)
+            bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+            nn.init.uniform_(self.lin_b, -bound, bound)
+
 
 class TransformerClassifier(nn.Module):
 
@@ -81,9 +125,6 @@ class TransformerClassifier(nn.Module):
 
         # Input Embedding (Encoder)
         self.encoder_input_layer = nn.Linear(in_features=self.input_features, out_features=self.d_model)
-        
-        # Output Mapping (Linear Reconstruction Layer)
-        self.linear_mapping = nn.Linear(in_features=self.d_model, out_features=self.input_features)
 
         # Positional Encoding
         self.positional_encoding_layer = PositionalEncoding(d_model=self.d_model, dropout=self.dropout_pos_enc)
@@ -104,6 +145,12 @@ class TransformerClassifier(nn.Module):
         # classifier
         self.adaptive = nn.AdaptiveAvgPool1d(1)
         self.classifier = nn.Linear(self.d_model, self.num_patients)
+        self.predictor = nn.Linear(self.d_model, self.input_features)
+        self.ensemble_head = EnsembleLinear(
+            in_features=self.d_model,
+            out_features=self.input_features,
+            ensemble_size=5
+        )
 
     def forward(self, src: Tensor) -> Tensor:
         """
@@ -133,6 +180,8 @@ class TransformerClassifier(nn.Module):
 
         features = src.permute(1, 2, 0).contiguous()
         features = self.adaptive(features).squeeze(-1)
-        logits = self.classifier(features)    
+        logits = self.classifier(features)
+        # shape of features: (16, 32) -- batch_size, d_model
+        preds = self.ensemble_head(features)
 
-        return logits, features
+        return logits, features, preds

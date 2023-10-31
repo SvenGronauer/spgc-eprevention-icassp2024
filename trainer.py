@@ -43,12 +43,19 @@ class Trainer:
                 if batch is None:
                     continue
 
+                # x has shape: (16, 8, 23) == (batch_size, input_features, seq_len-1)
                 x = batch['data'].to(self.args.device)
                 user_ids = batch['user_id'].to(self.args.device)
-                
+                labels = batch['target'].to(self.args.device)  # of shape: (batch_size, input_features, 1)
+                labels = torch.squeeze(labels, dim=-1)
+                labels = labels[None, :, :].repeat([self.args.ensembles, 1, 1])  # to shape: (ens_size, batch_size, input_features)
 
                 # Forward
-                logits, features = self.model(x)
+                logits, features, mean = self.model(x)
+
+                # prediction loss
+                mse_loss = torch.sum(torch.pow(mean - labels, 2), dim=(0, 2))
+                total_loss = torch.mean(mse_loss)
 
                 # calculate accuracy
                 output_probabilities = torch.softmax(logits, dim=1)
@@ -56,11 +63,13 @@ class Trainer:
 
                 acc = (predicted_class == user_ids).float().mean()
 
-                # Compute loss and backprop
-                loss = self.criterion(logits, user_ids)
-
                 self.optim.zero_grad()
-                loss.backward()
+
+                # Compute loss and backprop
+                # loss = self.criterion(logits, user_ids)
+                # loss.backward()
+
+                total_loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5)
 
                 self.optim.step()
@@ -68,7 +77,7 @@ class Trainer:
 
                 # Log metrics
                 metrics = {
-                        'loss': loss.item(),
+                        'loss': total_loss.item(),
                         'acc': acc.item(),
                     }
 
@@ -82,48 +91,8 @@ class Trainer:
             self.model.eval()
             torch.set_grad_enabled(False)
 
-
-            # ---------- run on train distribution loader to get the features in eval mode ---------- #
-
-            print('Getting features from train distribution...')
-
-            all_features_train = []
-            all_labels_train = []
-
-            for batch in tqdm(self.dataloaders['train_distribution'], desc=f'Train, {epoch}/{self.args.epochs}'):
-                if batch is None:
-                    continue
-
-                x = batch['data'].to(self.args.device)
-                user_ids = batch['user_id'].to(self.args.device)
-                
-                # Forward
-                _, features = self.model(x)
-
-                # append features
-                all_features_train.append(features.detach().cpu())
-                all_labels_train.append(user_ids.detach().cpu())
-
-            all_features_train = torch.vstack(all_features_train).numpy()
-            all_labels_train = torch.hstack(all_labels_train).numpy()
-
-            # ----- train the elliptic envelopes of this epoch ----- #
-            print('Training Robust Covariance...')
-            clfs = []
-
-
-            # -------- train elliptic envelope to predict scores from classification features -------- # 
-            for subject in range(self.args.num_patients):
-                subject_features_train = all_features_train[all_labels_train==subject]
-
-                clf = EllipticEnvelope(support_fraction=1.0).fit(subject_features_train)
-                clfs.append(clf)
-
-            print('Calculating accuracy on validation set and anomaly scores...')
-            
-            
-
             # ---------- run on validation loader ---------- #
+            print('Calculating accuracy on validation set and anomaly scores...')
             anomaly_scores = []
             relapse_labels = []
             user_ids = []
@@ -132,21 +101,27 @@ class Trainer:
 
                 if batch is None:
                     continue
-
+                # data is of size: (1, windowsPerDay, 8, 23)
                 x = batch['data'].to(self.args.device)
                 user_id = batch['user_id'].to(self.args.device)
+                # labels are of size: (1, 16, 8, 1)
+                labels = batch['target'].to(self.args.device)
+                labels = torch.squeeze(labels, 3)
+                labels = torch.squeeze(labels, 0)
+                labels = labels[None, :, :].repeat([self.args.ensembles, 1, 1])  # to shape: (ens_size, batch_size, input_features)
 
                 x = x.squeeze(0) # remove fake batch dimension
 
                 # Forward
-                logits, features = self.model(x)
+                logits, features, mean = self.model(x)
 
+                # mse_loss = torch.sum(torch.pow(mean - labels, 2), dim=(0, 2))
 
-                current_clf = clfs[user_id.item()]
-                features = features.detach().cpu().numpy()
+                # Note: calculate mean anomaly score for whole day
 
-                anomaly_score = -current_clf.decision_function(features).mean()
-
+                scores = torch.sum(torch.pow(mean - labels, 2), dim=(0, 2))
+                # todo sven: I might flip the sign: (what is the meaning of anomaly score??)
+                anomaly_score = torch.mean(-scores).item()
                 anomaly_scores.append(anomaly_score)
                 relapse_labels.append(batch['relapse_label'].item())
                 user_ids.append(batch['user_id'].item())
@@ -154,6 +129,9 @@ class Trainer:
             anomaly_scores = np.array(anomaly_scores)
             relapse_labels = np.array(relapse_labels)
             user_ids = np.array(user_ids)
+
+            print("anomaly_scores: ")
+            print(anomaly_scores)
 
             print('Calculating metrics...')
 

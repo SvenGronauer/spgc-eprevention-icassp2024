@@ -29,6 +29,7 @@ def parse():
     parser = argparse.ArgumentParser()
     # use --cores 1 for debugging (since multi threads will raise errros)
     parser.add_argument('--cores', type=int, default=os.cpu_count())
+    parser.add_argument('--ensembles', type=int, default=5)
 
     # transformer parameters
     parser.add_argument('--window_size', type=int, default=48)

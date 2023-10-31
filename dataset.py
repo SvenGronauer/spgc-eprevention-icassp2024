@@ -54,12 +54,17 @@ class PatientDataset(Dataset):
                                 if mode == "train":
                                     # gather all data in this day with an overlap window of 12 (1H) and for duration of window_size  
                                     for start_idx in range(0, len(day_data) - self.window_size, 12): 
-                                        sequence = day_data.iloc[start_idx:start_idx + self.window_size]
+                                        # sequence is of size: (window_size-1, input_features)
+                                        sequence = day_data.iloc[start_idx:start_idx+self.window_size-1]
                                         sequence = sequence[self.data_columns].copy().to_numpy()
-                                        self.data.append((sequence, int(patient[1:]), relapse_label))
+                                        # target is of size: (1, input_features)
+                                        last_entry = slice(start_idx+self.window_size-1, start_idx+self.window_size)
+                                        target = day_data.iloc[last_entry]
+                                        target = target[self.data_columns].copy().to_numpy()
+                                        self.data.append((sequence, target, int(patient[1:]), relapse_label))
                                 else:
                                     # during validation we need all data to get all subsequences
-                                    self.data.append((day_data, int(patient[1:]), relapse_label))
+                                    self.data.append((day_data, None, int(patient[1:]), relapse_label))
                              
 
 
@@ -74,7 +79,7 @@ class PatientDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        day_data, patient_id, relapse_label = self.data[idx]
+        day_data, target, patient_id, relapse_label = self.data[idx]
         if self.mode == 'train':
             sequence = day_data
 
@@ -82,31 +87,52 @@ class PatientDataset(Dataset):
             sequence_tensor = torch.tensor(sequence, dtype=torch.float32)
             sequence_tensor = sequence_tensor.permute(1, 0)
 
-        else: 
+            target[:, :-2] = self.scaler.transform(target[:, :-2])
+            target_tensor = torch.tensor(target, dtype=torch.float32)
+            target_tensor = target_tensor.permute(1, 0)
+        else:  # validation
             sequences = []
+            targets = []
             if len(day_data) < self.window_size:
                 print("Day data is less than window size")
                 # Handle accordingly
                 return None 
             
             if len(day_data) == self.window_size:
-                start_idx = 0
-                sequence = day_data.iloc[start_idx:start_idx + self.window_size]
+                sequence = day_data.iloc[0:self.window_size-1]
                 sequence = sequence[self.data_columns].copy().to_numpy()
                 sequence[:, :-2] = self.scaler.transform(sequence[:, :-2])
                 sequences.append(sequence)
+
+                last_entry = slice(self.window_size - 1, self.window_size)
+                target = day_data.iloc[last_entry]
+                target = target[self.data_columns].copy().to_numpy()
+                target[:, :-2] = self.scaler.transform(target[:, :-2])
+                targets.append(target)
             else:
                 for start_idx in range(0, len(day_data) - self.window_size, self.window_size//3): # 1/3 overlap
-                    sequence = day_data.iloc[start_idx:start_idx + self.window_size]
+                    sequence = day_data.iloc[start_idx:start_idx + self.window_size - 1]
                     sequence = sequence[self.data_columns].copy().to_numpy()
                     sequence[:, :-2] = self.scaler.transform(sequence[:, :-2])
                     sequences.append(sequence)
+
+                    last_entry = slice(start_idx + self.window_size - 1,  start_idx + self.window_size)
+                    target = day_data.iloc[last_entry]
+                    target = target[self.data_columns].copy().to_numpy()
+                    target[:, :-2] = self.scaler.transform(target[:, :-2])
+                    targets.append(target)
+
             sequence = np.stack(sequences)
+            target = np.stack(targets)
             sequence_tensor = torch.tensor(sequence, dtype=torch.float32)
             sequence_tensor = sequence_tensor.permute(0, 2, 1)
+
+            target_tensor = torch.tensor(target, dtype=torch.float32)
+            target_tensor = target_tensor.permute(0, 2, 1)
         
         return {
             'data': sequence_tensor,
+            'target': target_tensor,
             'user_id': torch.tensor(patient_id, dtype=torch.long)-1,
             'relapse_label': torch.tensor(relapse_label, dtype=torch.long),
         }

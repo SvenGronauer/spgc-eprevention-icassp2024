@@ -27,6 +27,8 @@ def get_device(device_str="auto") -> str:
 def parse():
     '''Returns args passed to the train.py script.'''
     parser = argparse.ArgumentParser()
+    # use --cores 1 for debugging (since multi threads will raise errros)
+    parser.add_argument('--cores', type=int, default=os.cpu_count())
 
     # transformer parameters
     parser.add_argument('--window_size', type=int, default=48)
@@ -111,11 +113,18 @@ def main():
             return None
         return torch.utils.data.dataloader.default_collate(batch)
 
-    loaders = {
-        'train': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=8, pin_memory=True, collate_fn=collate_fn),
-        'val': torch.utils.data.DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=8, pin_memory=True, collate_fn=collate_fn),
-        'train_distribution': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=8, pin_memory=True, collate_fn=collate_fn)
-    }
+    if args.cores == 1:  # use 1 cpu core for debugging purposes
+        loaders = {
+            'train': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.cores, pin_memory=True),
+            'val': torch.utils.data.DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=args.cores, pin_memory=True),
+            'train_distribution': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.cores, pin_memory=True)
+        }
+    else:
+        loaders = {
+            'train': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn),
+            'val': torch.utils.data.DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn),
+            'train_distribution': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn)
+        }
 
     # Trainer
     trainer = Trainer(

@@ -49,7 +49,8 @@ class PatientDataset(Dataset):
 
                                 if len(day_data) < self.window_size:
                                     continue
-                                
+                                # columns in sequence:
+                                # day_index  acc_norm  heartRate_mean  rRInterval_mean, rRInterval_sdnn, rRInterval_lombscargle,  gyr_norm     sin_t     cos_t
                                 if mode == "train":
                                     # gather all data in this day with an overlap window of 12 (1H) and for duration of window_size  
                                     for start_idx in range(0, len(day_data) - self.window_size, 12): 

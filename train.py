@@ -55,37 +55,47 @@ def main():
     print('Using device', args.device)
 
     # Model
-    model = TransformerClassifier(vars(args))
-    model.to(device)
+    models = [TransformerClassifier(vars(args)).to(device) for _ in range(args.num_patients)]
 
-    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    n_parameters = sum(p.numel() for p in models[0].parameters() if p.requires_grad)
     print('Number of parameters:', n_parameters)
 
     # Optimizer
     if args.optimizer == 'SGD':
-        optimizer = torch.optim.SGD(params=model.parameters(), lr=args.learning_rate, momentum=0.9)
+        optimizers = [torch.optim.SGD(params=models[i].parameters(), lr=args.learning_rate, momentum=0.9) for i in range(args.num_patients)]
     elif args.optimizer == 'Adam':
-        optimizer = torch.optim.Adam(params=model.parameters(), lr=args.learning_rate, betas=(0.9, 0.999), weight_decay=args.weight_decay)
+        optimizers = [torch.optim.Adam(params=models[i].parameters(), lr=args.learning_rate, betas=(0.9, 0.999), weight_decay=args.weight_decay) for i in range(args.num_patients)]
     else:
         raise ValueError("Optimizer chosen not implemented!")
 
-    scheduler = MultiStepLR(optimizer, milestones=[args.epochs//2, args.epochs//4*3], gamma=0.1)
+    schedulers = [MultiStepLR(optimizers[i], milestones=[args.epochs//2, args.epochs//4*3], gamma=0.1) for i in range(args.num_patients)]
 
-    train_dataset = PatientDataset(features_path=args.features_path, 
-                                   dataset_path=args.dataset_path,
-                                   mode='train', window_size=args.window_size)
+    train_datasets, train_dist_datasets, valid_datasets = [], [], []
+
+    for patient in ["P"+str(i) for i in range(1,args.num_patients+1)]:
+        train_dataset = PatientDataset(features_path=args.features_path,
+                                       dataset_path=args.dataset_path,
+                                       mode='train', window_size=args.window_size, stride=args.stride, patient=patient)
+        train_datasets.append(train_dataset)
+
+        train_dist_datasets.append(PatientDataset(features_path=args.features_path,
+                                       dataset_path=args.dataset_path,
+                                       mode='train_dist', window_size=args.window_size, stride=args.stride, patient=patient))
+
+        valid_datasets.append(PatientDataset(features_path=args.features_path,
+                                       dataset_path=args.dataset_path,
+                                       mode='val', scaler=train_dataset.scaler, window_size=args.window_size,
+                                       stride=args.stride, patient=patient))
 
     # save scaler as pkl
     os.makedirs(args.save_path, exist_ok=True)
     with open(f'{args.save_path}/scaler.pkl', 'wb') as f:
         pickle.dump(train_dataset.scaler, f)
 
-    valid_dataset = PatientDataset(features_path=args.features_path,
-                                   dataset_path=args.dataset_path,
-                                   mode='val', scaler=train_dataset.scaler, window_size=args.window_size)
 
-    print('Length of train dataset:', len(train_dataset))
-    print('Length of valid dataset:', len(valid_dataset))
+
+    #print('Length of train dataset:', len(train_dataset))
+    #print('Length of valid dataset:', len(valid_dataset))
 
     # add a collate fn which ignores None
     def collate_fn(batch):
@@ -94,18 +104,21 @@ def main():
             return None
         return torch.utils.data.dataloader.default_collate(batch)
 
-    loaders = {
-        'train': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=8, pin_memory=True, collate_fn=collate_fn),
-        'val': torch.utils.data.DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=8, pin_memory=True, collate_fn=collate_fn),
-        'train_distribution': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=8, pin_memory=True, collate_fn=collate_fn)
-    }
+    all_loaders = []
+    for i in range(args.num_patients):
+        loaders = {
+            'train': torch.utils.data.DataLoader(train_datasets[i], batch_size=args.batch_size, shuffle=True, num_workers=8, pin_memory=True, collate_fn=collate_fn),
+            'val': torch.utils.data.DataLoader(valid_datasets[i], batch_size=1, shuffle=False, num_workers=8, pin_memory=True, collate_fn=collate_fn),
+            'train_distribution': torch.utils.data.DataLoader(train_dist_datasets[i], batch_size=1, shuffle=False, num_workers=8, pin_memory=True, collate_fn=collate_fn)
+        }
+        all_loaders.append(loaders)
 
     # Trainer
     trainer = Trainer(
-        model=model,
-        optim=optimizer,
-        sched=scheduler,
-        loaders=loaders,
+        models=models,
+        optims=optimizers,
+        scheds=schedulers,
+        loaders=all_loaders,
         args=args
     )
 

@@ -70,10 +70,10 @@ class TransformerClassifier(nn.Module):
             n_encoder_layers = 2,
             n_decoder_layers = 2,
             n_head = 8,
-            dropout_encoder = 0.2, 
+            dropout_encoder = 0.1,
             dropout_pos_enc = 0.1,
-            dim_feedforward_encoder = 2048,
-            num_patients = 10
+            dim_feedforward_encoder = 64,
+            dim_out = 1
         )
 
         for arg, default in args_defaults.items():
@@ -103,7 +103,7 @@ class TransformerClassifier(nn.Module):
         
         # classifier
         self.adaptive = nn.AdaptiveAvgPool1d(1)
-        self.classifier = nn.Linear(self.d_model, self.num_patients)
+        self.classifier = nn.Linear(self.d_model, self.dim_out)
 
     def forward(self, src: Tensor) -> Tensor:
         """
@@ -126,13 +126,11 @@ class TransformerClassifier(nn.Module):
         src = self.encoder_input_layer(src) 
 
         # Positional Encoding (Encoder)
-        src = self.positional_encoding_layer(src) 
+        src = self.positional_encoding_layer(src)
 
         # Encoder
         src = self.encoder(src=src)
 
-        features = src.permute(1, 2, 0).contiguous()
-        features = self.adaptive(features).squeeze(-1)
-        logits = self.classifier(features)    
-
+        features = src.permute(1, 0, 2).contiguous()
+        logits = self.classifier(features)
         return logits, features

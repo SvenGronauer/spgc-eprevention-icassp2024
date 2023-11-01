@@ -115,13 +115,12 @@ class Trainer:
                 # Forward
                 logits, features, mean = self.model(x)
 
-                # mse_loss = torch.sum(torch.pow(mean - labels, 2), dim=(0, 2))
+                # Notes:
+                # - calculate mean anomaly score for whole day
+                # - anomaly score is Mahalanobis distance
 
-                # Note: calculate mean anomaly score for whole day
-
-                scores = torch.sum(torch.pow(mean - labels, 2), dim=(0, 2))
-                # todo sven: I might flip the sign: (what is the meaning of anomaly score??)
-                anomaly_score = torch.mean(-scores).item()
+                scores = torch.sum(torch.pow(mean - labels, 2), dim=(0, 2)) - 100
+                anomaly_score = torch.mean(scores).item()
                 anomaly_scores.append(anomaly_score)
                 relapse_labels.append(batch['relapse_label'].item())
                 user_ids.append(batch['user_id'].item())
@@ -129,9 +128,6 @@ class Trainer:
             anomaly_scores = np.array(anomaly_scores)
             relapse_labels = np.array(relapse_labels)
             user_ids = np.array(user_ids)
-
-            print("anomaly_scores: ")
-            print(anomaly_scores)
 
             print('Calculating metrics...')
 

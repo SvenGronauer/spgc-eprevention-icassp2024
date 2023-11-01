@@ -1,5 +1,5 @@
 
-# ## SPGC ICASSP 2024 Challenge
+# SPGC ICASSP 2024 Challenge
 
 ## Approach
 Changes made to the baseline:
@@ -27,7 +27,9 @@ Changes made to the baseline:
 **Outlier Detection**
 
 Instead of using an Elliptic Envelope detector, collect the mean prediction error for each day in the training set and the validation set. For each day in the validation set, calculate the mean-normalized prediction error:
-$$e_{\text{norm}} = \frac{{e_{\text{val}} - \overline{e}_{\text{train}}}}{\text{max}(e_{\text{train}}) -\text{min}(e_{\text{train}})} $$
+$$ 
+e_{\text{norm}} = \frac{{e_{\text{val}} - \overline{e}_{\text{train}}}}{\text{max}(e_{\text{train}}) -\text{min}(e_{\text{train}})} 
+$$
 
 Designate any day with a normalized prediction error above 0 as a relapse day:
 

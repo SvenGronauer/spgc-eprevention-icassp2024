@@ -4,80 +4,85 @@ import torch
 from torch.utils.data import Dataset
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import numpy as np
-
-
+pd.options.mode.chained_assignment = None  # default='warn'
 
 class PatientDataset(Dataset):
-    def __init__(self, features_path, dataset_path, mode='train', scaler=None, window_size=48):
+    def __init__(self, features_path, dataset_path, patient, mode='train', scaler=None, window_size=48, stride=12):
         self.features_path = features_path
         self.dataset_path = dataset_path # to load relapses
         self.mode = mode
         self.window_size = window_size
-        
-        self.columns_to_scale = ['acc_norm', 'heartRate_mean', 'rRInterval_mean', 'rRInterval_rmssd', 'rRInterval_sdnn', 'rRInterval_lombscargle_power_high']
-        self.data_columns = self.columns_to_scale + ['sin_t', 'cos_t']
+        self.stride = stride
 
+        self.columns_to_scale = ['acc_norm', 'gyr_norm', 'heartRate_mean', 'rRInterval_mean',
+                                 'rRInterval_rmssd', 'rRInterval_sdnn', 'rRInterval_lombscargle_power_high', 'steps']
+        self.data_columns = self.columns_to_scale + ['mins']
 
         self.data = []
 
 
-        for patient in sorted(os.listdir(features_path)):
-            all_data = pd.DataFrame()
-            patient_dir = os.path.join(features_path, patient)
+        all_data = pd.DataFrame()
+        patient_dir = os.path.join(features_path, patient)
 
-            for subfolder in os.listdir(patient_dir):
-                if (mode == 'train' and 'train' in subfolder) or (mode == 'val' and 'val' in subfolder) or (mode == 'test' and 'test' in subfolder):
-                    subfolder_dir = os.path.join(patient_dir, subfolder)
-                    for file in os.listdir(subfolder_dir):
-                        if file.endswith('.csv'):
-                            file_path = os.path.join(subfolder_dir, file)
-                            df = pd.read_csv(file_path, index_col=0)
-                            df = df.replace([np.inf, -np.inf], np.nan)
-                            df = df.dropna() # something better could be used here - e.g. imputing
-                       
-                            all_data = pd.concat([all_data, df]) 
+        for subfolder in os.listdir(patient_dir):
+            if ('train' in mode and 'train' in subfolder and subfolder.endswith('train')) or \
+                    (mode == 'val' and 'val' in subfolder and subfolder.endswith('val')) or (mode == 'test' and 'test' in subfolder):
+                subfolder_dir = os.path.join(patient_dir, subfolder)
+                for file in os.listdir(subfolder_dir):
+                    if file.endswith('features_stretched_w_steps.csv'):
+                        file_path = os.path.join(subfolder_dir, file)
+                        df = pd.read_csv(file_path)
+                        df = df.replace([np.inf, -np.inf], np.nan)
+                        for col in self.columns_to_scale:
+                            for min in df['mins'].unique():
+                                min_slice = df.loc[df['mins'] == min, col]
+                                df.loc[(df[col].isna()) & (df['mins'] == min), col] = min_slice.median()
+                        all_data = pd.concat([all_data, df])
+                        day_indices = df['day'].unique()
 
-                            day_indices = df['day_index'].unique()
+                        if "train" not in mode:
+                            relapse_df = pd.read_csv(os.path.join(self.features_path, patient, subfolder, 'relapse_stretched.csv'))
 
-                            relapse_df = pd.read_csv(os.path.join(self.dataset_path, patient, subfolder, 'relapses.csv'))
+                        for day_index in day_indices:
+                            day_data = df[df['day'] == day_index].copy()
+                            if "train" not in mode:
+                                try:
+                                    relapse_label = relapse_df[relapse_df['day'] == day_index]['relapse'].values[0]
+                                except:
+                                    relapse_label = 0
 
-                            for day_index in day_indices:
-                                day_data = df[df['day_index'] == day_index].copy()
 
-                                relapse_label = relapse_df[relapse_df['day_index'] == day_index]['relapse'].values[0]
+                            if len(day_data) < self.window_size:
+                                continue
 
-
-                                if len(day_data) < self.window_size:
-                                    continue
-                                
-                                if mode == "train":
-                                    # gather all data in this day with an overlap window of 12 (1H) and for duration of window_size  
-                                    for start_idx in range(0, len(day_data) - self.window_size, 12): 
-                                        sequence = day_data.iloc[start_idx:start_idx + self.window_size]
-                                        sequence = sequence[self.data_columns].copy().to_numpy()
-                                        self.data.append((sequence, int(patient[1:]), relapse_label))
-                                else:
-                                    # during validation we need all data to get all subsequences
-                                    self.data.append((day_data, int(patient[1:]), relapse_label))
-                             
-
+                            if mode == "train":
+                                # gather all data in this day with an overlap window of 12 (1H) and for duration of window_size
+                                for start_idx in range(0, len(day_data) - self.window_size + 1, self.stride):
+                                    sequence = day_data.iloc[start_idx:start_idx + self.window_size]
+                                    sequence = sequence[self.data_columns].copy().to_numpy()
+                                    self.data.append((sequence, int(patient[1:]), 0, int(patient[-1])))
+                            elif mode == "val":
+                                # during validation we need all data to get all subsequences
+                                self.data.append((day_data, relapse_label, int(patient[-1])))
+                            elif mode == "train_dist":
+                                # during validation we need all data to get all subsequences
+                                self.data.append((day_data, 0, int(patient[-1])))
 
         if scaler is None:
             print(mode, "fitting scaler")
             self.scaler = MinMaxScaler()
             self.scaler.fit(all_data[self.columns_to_scale].dropna().to_numpy())
         else:
-            self.scaler = scaler        
+            self.scaler = scaler
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        day_data, patient_id, relapse_label = self.data[idx]
+        day_data, relapse_label, patient_id = self.data[idx]
         if self.mode == 'train':
             sequence = day_data
-
-            sequence[:, :-2] = self.scaler.transform(sequence[:, :-2]) # scale all columns except sin_t and cos_t
+            sequence[:, :-1] = self.scaler.transform(sequence[:, :-1]) # scale all columns except min
             sequence_tensor = torch.tensor(sequence, dtype=torch.float32)
             sequence_tensor = sequence_tensor.permute(1, 0)
 
@@ -92,13 +97,13 @@ class PatientDataset(Dataset):
                 start_idx = 0
                 sequence = day_data.iloc[start_idx:start_idx + self.window_size]
                 sequence = sequence[self.data_columns].copy().to_numpy()
-                sequence[:, :-2] = self.scaler.transform(sequence[:, :-2])
+                sequence[:, :-1] = self.scaler.transform(sequence[:, :-1])
                 sequences.append(sequence)
             else:
-                for start_idx in range(0, len(day_data) - self.window_size, self.window_size//3): # 1/3 overlap
+                for start_idx in range(0, len(day_data) - self.window_size + 1, self.stride):
                     sequence = day_data.iloc[start_idx:start_idx + self.window_size]
                     sequence = sequence[self.data_columns].copy().to_numpy()
-                    sequence[:, :-2] = self.scaler.transform(sequence[:, :-2])
+                    sequence[:, :-1] = self.scaler.transform(sequence[:, :-1])
                     sequences.append(sequence)
             sequence = np.stack(sequences)
             sequence_tensor = torch.tensor(sequence, dtype=torch.float32)
@@ -107,6 +112,7 @@ class PatientDataset(Dataset):
         return {
             'data': sequence_tensor,
             'user_id': torch.tensor(patient_id, dtype=torch.long)-1,
+            'min_stamp': min_stamp,
             'relapse_label': torch.tensor(relapse_label, dtype=torch.long),
         }
 

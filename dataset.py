@@ -60,7 +60,7 @@ class PatientDataset(Dataset):
                                 for start_idx in range(0, len(day_data) - self.window_size + 1, self.stride):
                                     sequence = day_data.iloc[start_idx:start_idx + self.window_size]
                                     sequence = sequence[self.data_columns].copy().to_numpy()
-                                    self.data.append((sequence, int(patient[1:]), 0, int(patient[-1])))
+                                    self.data.append((sequence, 0, int(patient[-1])))
                             elif mode == "val":
                                 # during validation we need all data to get all subsequences
                                 self.data.append((day_data, relapse_label, int(patient[-1])))

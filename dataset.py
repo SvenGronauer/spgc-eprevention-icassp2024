@@ -67,6 +67,7 @@ class PatientDataset(Dataset):
                             elif mode == "train_dist":
                                 # during validation we need all data to get all subsequences
                                 self.data.append((day_data, 0, int(patient[-1])))
+                             
 
         if scaler is None:
             print(mode, "fitting scaler")
@@ -112,7 +113,6 @@ class PatientDataset(Dataset):
         return {
             'data': sequence_tensor,
             'user_id': torch.tensor(patient_id, dtype=torch.long)-1,
-            'min_stamp': min_stamp,
             'relapse_label': torch.tensor(relapse_label, dtype=torch.long),
         }
 

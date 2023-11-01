@@ -57,6 +57,7 @@ To train models for track 1 run:
 ```bash  
 python train.py --window_size 72 --num_patients 9 --features_path data/track_1_features --dataset_path data/track_1 --save_path checkpoints_track_1
 ```
+
 To train models for track 2 run:
 ```bash  
 python train.py --window_size 24 --num_patients 8 --features_path data/track_2_features --dataset_path data/track_2 --save_path checkpoints_track_2
@@ -65,6 +66,7 @@ python train.py --window_size 24 --num_patients 8 --features_path data/track_2_f
 ## Results
 ### Metrics
 Results on the validation set after applying all proposed changes (averaged over 5 runs):
+
 
 | Track 1 | PR-AUC | ROC-AUC | AVG |  
 |---------|--------|---------|-----|  

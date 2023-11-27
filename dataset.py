@@ -15,7 +15,8 @@ class PatientDataset(Dataset):
         self.window_size = window_size
         
         self.columns_to_scale = ['acc_norm', 'heartRate_mean', 'rRInterval_mean', 'rRInterval_rmssd', 'rRInterval_sdnn', 'rRInterval_lombscargle_power_high']
-        self.data_columns = self.columns_to_scale + ['sin_t', 'cos_t']
+        self.data_columns = self.columns_to_scale
+        self.target_columns = ['sin_t', 'cos_t']
 
 
         self.data = []
@@ -54,19 +55,18 @@ class PatientDataset(Dataset):
                                 if mode == "train":
                                     # gather all data in this day with an overlap window of 12 (1H) and for duration of window_size  
                                     for start_idx in range(0, len(day_data) - self.window_size, 12): 
-                                        # sequence is of size: (window_size-1, input_features)
-                                        sequence = day_data.iloc[start_idx:start_idx+self.window_size-1]
+                                        # sequence is of size: (window_size, input_features)
+                                        sequence = day_data.iloc[start_idx:start_idx+self.window_size]
                                         sequence = sequence[self.data_columns].copy().to_numpy()
-                                        # target is of size: (1, input_features)
-                                        last_entry = slice(start_idx+self.window_size-1, start_idx+self.window_size)
-                                        target = day_data.iloc[last_entry]
-                                        target = target[self.data_columns].copy().to_numpy()
+
+                                        # consider only last timestep of sequence
+                                        slc = slice(start_idx + self.window_size - 1, start_idx + self.window_size)
+                                        target = day_data.iloc[slc]
+                                        target = target[self.target_columns].copy().to_numpy()
                                         self.data.append((sequence, target, int(patient[1:]), relapse_label))
                                 else:
                                     # during validation we need all data to get all subsequences
                                     self.data.append((day_data, None, int(patient[1:]), relapse_label))
-                             
-
 
         if scaler is None:
             print(mode, "fitting scaler")
@@ -81,13 +81,10 @@ class PatientDataset(Dataset):
     def __getitem__(self, idx):
         day_data, target, patient_id, relapse_label = self.data[idx]
         if self.mode == 'train':
-            sequence = day_data
-
-            sequence[:, :-2] = self.scaler.transform(sequence[:, :-2]) # scale all columns except sin_t and cos_t
+            sequence = self.scaler.transform(day_data)
             sequence_tensor = torch.tensor(sequence, dtype=torch.float32)
             sequence_tensor = sequence_tensor.permute(1, 0)
 
-            target[:, :-2] = self.scaler.transform(target[:, :-2])
             target_tensor = torch.tensor(target, dtype=torch.float32)
             target_tensor = target_tensor.permute(1, 0)
         else:  # validation
@@ -99,28 +96,24 @@ class PatientDataset(Dataset):
                 return None 
             
             if len(day_data) == self.window_size:
-                sequence = day_data.iloc[0:self.window_size-1]
+                sequence = day_data.iloc[0:self.window_size]
                 sequence = sequence[self.data_columns].copy().to_numpy()
-                sequence[:, :-2] = self.scaler.transform(sequence[:, :-2])
+                sequence = self.scaler.transform(sequence)
                 sequences.append(sequence)
 
-                last_entry = slice(self.window_size - 1, self.window_size)
-                target = day_data.iloc[last_entry]
-                target = target[self.data_columns].copy().to_numpy()
-                target[:, :-2] = self.scaler.transform(target[:, :-2])
-                targets.append(target)
+                tar = day_data.iloc[0:self.window_size]
+                tar = tar[self.target_columns].copy().to_numpy()
+                targets.append(tar)
             else:
                 for start_idx in range(0, len(day_data) - self.window_size, self.window_size//3): # 1/3 overlap
-                    sequence = day_data.iloc[start_idx:start_idx + self.window_size - 1]
+                    sequence = day_data.iloc[start_idx:start_idx + self.window_size]
                     sequence = sequence[self.data_columns].copy().to_numpy()
-                    sequence[:, :-2] = self.scaler.transform(sequence[:, :-2])
+                    sequence = self.scaler.transform(sequence)
                     sequences.append(sequence)
 
-                    last_entry = slice(start_idx + self.window_size - 1,  start_idx + self.window_size)
-                    target = day_data.iloc[last_entry]
-                    target = target[self.data_columns].copy().to_numpy()
-                    target[:, :-2] = self.scaler.transform(target[:, :-2])
-                    targets.append(target)
+                    tar = day_data.iloc[start_idx:start_idx + self.window_size]
+                    tar = tar[self.target_columns].copy().to_numpy()
+                    targets.append(tar)
 
             sequence = np.stack(sequences)
             target = np.stack(targets)

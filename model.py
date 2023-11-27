@@ -1,6 +1,8 @@
 import math
+from typing import Tuple
+
 import torch
-import torch.nn as nn 
+import torch.nn as nn
 from torch import Tensor
 import torch.nn.functional as F
 
@@ -34,7 +36,8 @@ class EnsembleLinear(nn.Module):
     ensemble_size: int
     weight: torch.Tensor
 
-    def __init__(self, in_features: int, out_features: int, ensemble_size: int, weight_decay: float = 0., bias: bool = True) -> None:
+    def __init__(self, in_features: int, out_features: int, ensemble_size: int,
+                 weight_decay: float = 0., bias: bool = True) -> None:
         super(EnsembleLinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -70,7 +73,6 @@ class EnsembleLinear(nn.Module):
 
 
 class TransformerClassifier(nn.Module):
-
     """
     [1] Wu, N., Green, B., Ben, X., O'banion, S. (2020). 
     'Deep Transformer Models for Time Series Forecasting: 
@@ -83,8 +85,7 @@ class TransformerClassifier(nn.Module):
     Available at: http://arxiv.org/abs/1706.03762 (Accessed: 9 March 2022).
     """
 
-    def __init__(self, args): 
-
+    def __init__(self, args):
         """
         Args:
             input_features: int, number of input variables. 1 if univariate.
@@ -103,35 +104,37 @@ class TransformerClassifier(nn.Module):
                                      of the decoder
         """
 
-        super().__init__() 
+        super().__init__()
 
         args_defaults = dict(
-            input_features = 10,
-            seq_len = 512,
-            batch_first = False,
-            device = 'cuda',
-            d_model = 32,  
-            n_encoder_layers = 2,
-            n_decoder_layers = 2,
-            n_head = 8,
-            dropout_encoder = 0.2, 
-            dropout_pos_enc = 0.1,
-            dim_feedforward_encoder = 2048,
-            num_patients = 10
+            input_features=10,
+            seq_len=512,
+            batch_first=False,
+            device='cuda',
+            d_model=32,
+            n_encoder_layers=2,
+            n_decoder_layers=2,
+            n_head=8,
+            dropout_encoder=0.2,
+            dropout_pos_enc=0.1,
+            dim_feedforward_encoder=2048,
+            num_patients=10
         )
 
         for arg, default in args_defaults.items():
             setattr(self, arg, args[arg] if arg in args and args[arg] is not None else default)
 
         # Input Embedding (Encoder)
-        self.encoder_input_layer = nn.Linear(in_features=self.input_features, out_features=self.d_model)
+        self.encoder_input_layer = nn.Linear(in_features=self.input_features,
+                                             out_features=self.d_model)
 
         # Positional Encoding
-        self.positional_encoding_layer = PositionalEncoding(d_model=self.d_model, dropout=self.dropout_pos_enc)
+        self.positional_encoding_layer = PositionalEncoding(d_model=self.d_model,
+                                                            dropout=self.dropout_pos_enc)
 
         # Encoder
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=self.d_model, 
+            d_model=self.d_model,
             nhead=self.n_head,
             dim_feedforward=self.dim_feedforward_encoder,
             dropout=self.dropout_encoder,
@@ -139,20 +142,15 @@ class TransformerClassifier(nn.Module):
         )
         self.encoder = nn.TransformerEncoder(
             encoder_layer=encoder_layer,
-            num_layers=self.n_encoder_layers, 
-        )
-        
-        # classifier
-        self.adaptive = nn.AdaptiveAvgPool1d(1)
-        self.classifier = nn.Linear(self.d_model, self.num_patients)
-        self.predictor = nn.Linear(self.d_model, self.input_features)
-        self.ensemble_head = EnsembleLinear(
-            in_features=self.d_model,
-            out_features=self.input_features,
-            ensemble_size=5
+            num_layers=self.n_encoder_layers,
         )
 
-    def forward(self, src: Tensor) -> Tensor:
+        # classifier
+        self.adaptive = nn.AdaptiveAvgPool1d(1)
+        # self.classifier = nn.Linear(self.d_model, self.num_patients)
+        self.predictor = nn.Linear(self.d_model, 2)
+
+    def forward(self, src: Tensor) -> Tuple[Tensor, Tensor]:
         """
         Returns a tensor of shape:
         [target_sequence_length, batch_size, num_predicted_features]
@@ -170,18 +168,17 @@ class TransformerClassifier(nn.Module):
         src = src.permute(2, 0, 1)
 
         # Input Embedding (Encoder)
-        src = self.encoder_input_layer(src) 
+        src = self.encoder_input_layer(src)
 
         # Positional Encoding (Encoder)
-        src = self.positional_encoding_layer(src) 
+        src = self.positional_encoding_layer(src)
 
         # Encoder
         src = self.encoder(src=src)
 
         features = src.permute(1, 2, 0).contiguous()
         features = self.adaptive(features).squeeze(-1)
-        logits = self.classifier(features)
-        # shape of features: (16, 32) -- batch_size, d_model
-        preds = self.ensemble_head(features)
+        # features.shape: (16, 32) = (batch_size, d_model)
+        preds = self.predictor(features)
 
-        return logits, features, preds
+        return features, preds

@@ -19,7 +19,7 @@ class Trainer:
         self.sched = sched
         self.dataloaders = loaders
         self.args = args
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.MSELoss()
 
         self.current_best_score = 0
 
@@ -30,43 +30,26 @@ class Trainer:
             if batch is None:
                 continue
 
-            # x has shape: (16, 8, 23) == (batch_size, input_features, seq_len-1)
+            # x has shape: (16, 6, 24) == (batch_size, input_features, seq_len)
             x = batch['data'].to(self.args.device)
-            user_ids = batch['user_id'].to(self.args.device)
-            labels = batch['target'].to(
-                self.args.device)  # of shape: (batch_size, input_features, 1)
+            labels = batch['target'].to(self.args.device)  # shape: (batch_size, input_features, 1)
+            # labels.shape : (16, 6, 24)
             labels = torch.squeeze(labels, dim=-1)
-            labels = labels[None, :, :].repeat(
-                [self.args.ensembles, 1, 1])  # to shape: (ens_size, batch_size, input_features)
 
             # Forward
-            logits, features, mean = self.model(x)
+            features, mean = self.model(x)
 
-            # prediction loss
-            mse_loss = torch.sum(torch.pow(mean - labels, 2), dim=(0, 2))
-            total_loss = torch.mean(mse_loss)
-
-            # calculate accuracy
-            output_probabilities = torch.softmax(logits, dim=1)
-            predicted_class = torch.argmax(output_probabilities, dim=1)
-
-            acc = (predicted_class == user_ids).float().mean()
+            mse_loss = self.criterion(mean, labels)
 
             self.optim.zero_grad()
-
-            # Compute loss and backprop
-            # loss = self.criterion(logits, user_ids)
-            # loss.backward()
-
-            total_loss.backward()
+            mse_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5)
 
             self.optim.step()
 
             # Log metrics
             metrics = {
-                'loss': total_loss.item(),
-                'acc': acc.item(),
+                'loss': mse_loss.item(),
             }
 
             for k, v in metrics.items():

@@ -51,10 +51,9 @@ class EnsembleLinear(nn.Module):
         self.reset_parameters()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batched_inputs = x[None, :, :].repeat([self.ensemble_size, 1, 1])
-
-        w_times_x = torch.bmm(batched_inputs, self.lin_w)
-        return torch.add(w_times_x, self.lin_b[:, None, :])  # w times x + b
+        w_times_x = torch.bmm(x, self.lin_w)
+        y = torch.add(w_times_x, self.lin_b[:, None, :])  # w times x + b
+        return y
 
     def extra_repr(self) -> str:
         return 'in_features={}, out_features={}, bias={}'.format(

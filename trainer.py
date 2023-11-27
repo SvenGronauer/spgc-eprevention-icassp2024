@@ -7,6 +7,7 @@ import sklearn.metrics
 import os
 import numpy as np
 from sklearn.covariance import EllipticEnvelope
+from model import EnsembleLinear
 
 
 class Trainer:
@@ -22,6 +23,21 @@ class Trainer:
         self.criterion = nn.MSELoss()
 
         self.current_best_score = 0
+
+        self.mlps = []
+        self.optimizers = []
+        for i in range(self.args.num_patients):
+
+            # FIXME: change Linear to MLP
+            ensemble_mlp_head = EnsembleLinear(
+                in_features=self.args.d_model,
+                out_features=self.args.output_dim,
+                ensemble_size=self.args.ensembles
+            )
+
+            self.mlps.append(ensemble_mlp_head)
+            ps = ensemble_mlp_head.parameters()
+            self.optimizers.append(torch.optim.Adam(ps, lr=1e-3, weight_decay=1e-4))
 
     def _train_encoder_once(self, epoch: int):
         epoch_metrics = {}
@@ -52,54 +68,72 @@ class Trainer:
                 'loss': mse_loss.item(),
             }
 
-            # todo sven: remove next line
-            return epoch_metrics
-
             for k, v in metrics.items():
                 epoch_metrics[k] = epoch_metrics[k] + [v] if k in epoch_metrics else [v]
 
         return epoch_metrics
 
-    def resample_batch(self, indices, ensemble_size: int, data_size: int, dataset) -> torch.Tensor:
+    def resample_batch(self, indices, ensemble_size: int, dataset):
         offsets = torch.zeros_like(indices)
-        batch = []
+        data_batch = []
+        target_batch = []
         for i in range(indices.size()[0]):
             while (offsets[i] % ensemble_size) == 0:
-                offsets[i] = torch.randint(low=1, high=data_size, size=(1,))
-            r_idx = (offsets[i] + indices[i]) % data_size
+                offsets[i] = torch.randint(low=1, high=len(dataset), size=(1,))
+            r_idx = (offsets[i] + indices[i]) % len(dataset)
             x = dataset[r_idx]['data']
+            t = dataset[r_idx]['target']
             # print(x.shape)
-            batch.append(x)
-        data = torch.stack(batch)
-        return data
+            data_batch.append(x)
+            target_batch.append(t)
+        data = torch.stack(data_batch)
+        targets = torch.stack(target_batch)
+        return data, targets
 
     def _train_ensembles(self):
         k = self.args.ensembles
-        for i in range(self.args.num_patients):
+        for i in tqdm(range(self.args.num_patients), desc=f"Train Ensembles"):
+            ensemble_mlp_head = self.mlps[i]
+            optim = self.optimizers[i]
             loader_str = "P" + str(i+1) +'_train'
-            for batch in tqdm(self.dataloaders[loader_str], desc=f"Train Ensembles.."):
-                data_size = len(self.dataloaders[loader_str].dataset)
+            for batch in self.dataloaders[loader_str]:
                 if batch is None:
                     continue
 
                 # x has shape: (16, 6, 24) == (batch_size, input_features, seq_len)
                 x = batch['data'].to(self.args.device)
+                targets = batch['target'].to(self.args.device)
+                targets = torch.squeeze(targets, dim=-1)
                 # Forward
                 features, _ = self.model(x)
 
                 batched_features = features[None, :, :].repeat([k, 1, 1])
-                print(f"batched_features.shape: \n{batched_features.shape}")
+                batched_targets = targets[None, :, :].repeat([k, 1, 1])
+                # print(f"batched_features.shape: \n{batched_features.shape}")
                 ensemble_mask = batch['idx'] % k
 
-                resampled_x = self.resample_batch(batch['idx'], k, data_size, self.dataloaders[loader_str].dataset)
-
+                resampled_x, r_targets = self.resample_batch(
+                    batch['idx'],
+                    k,
+                    self.dataloaders[loader_str].dataset
+                )
+                r_targets = torch.squeeze(r_targets, dim=-1)
                 # resampled_x.shape = torch.Size([16, 6, 24])
-                #print(f"Resampled X: \n{resampled_x.shape}")
                 r_features, _ = self.model(resampled_x)
-                print(f"r_features.shape: \n{r_features.shape}")
+                # print(f"r_features.shape: \n{r_features.shape}")
                 batched_features[ensemble_mask] = r_features
+                batched_targets[ensemble_mask] = r_targets
 
-                # todo: forward pass
+                # forward pass
+                mean = ensemble_mlp_head.forward(batched_features)
+                mse_loss = torch.sum(torch.pow(mean - batched_targets, 2), dim=(0, 2))
+                total_loss = torch.mean(mse_loss)
+
+                optim.zero_grad()
+                total_loss.backward()
+                torch.nn.utils.clip_grad_norm_(ensemble_mlp_head.parameters(), 5)
+
+                optim.step()
 
     def train(self):
         # Initialize output metrics

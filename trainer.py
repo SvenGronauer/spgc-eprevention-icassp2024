@@ -52,10 +52,54 @@ class Trainer:
                 'loss': mse_loss.item(),
             }
 
+            # todo sven: remove next line
+            return epoch_metrics
+
             for k, v in metrics.items():
                 epoch_metrics[k] = epoch_metrics[k] + [v] if k in epoch_metrics else [v]
 
         return epoch_metrics
+
+    def resample_batch(self, indices, ensemble_size: int, data_size: int, dataset) -> torch.Tensor:
+        offsets = torch.zeros_like(indices)
+        batch = []
+        for i in range(indices.size()[0]):
+            while (offsets[i] % ensemble_size) == 0:
+                offsets[i] = torch.randint(low=1, high=data_size, size=(1,))
+            r_idx = (offsets[i] + indices[i]) % data_size
+            x = dataset[r_idx]['data']
+            # print(x.shape)
+            batch.append(x)
+        data = torch.stack(batch)
+        return data
+
+    def _train_ensembles(self):
+        k = self.args.ensembles
+        for i in range(self.args.num_patients):
+            loader_str = "P" + str(i+1) +'_train'
+            for batch in tqdm(self.dataloaders[loader_str], desc=f"Train Ensembles.."):
+                data_size = len(self.dataloaders[loader_str].dataset)
+                if batch is None:
+                    continue
+
+                # x has shape: (16, 6, 24) == (batch_size, input_features, seq_len)
+                x = batch['data'].to(self.args.device)
+                # Forward
+                features, _ = self.model(x)
+
+                batched_features = features[None, :, :].repeat([k, 1, 1])
+                print(f"batched_features.shape: \n{batched_features.shape}")
+                ensemble_mask = batch['idx'] % k
+
+                resampled_x = self.resample_batch(batch['idx'], k, data_size, self.dataloaders[loader_str].dataset)
+
+                # resampled_x.shape = torch.Size([16, 6, 24])
+                #print(f"Resampled X: \n{resampled_x.shape}")
+                r_features, _ = self.model(resampled_x)
+                print(f"r_features.shape: \n{r_features.shape}")
+                batched_features[ensemble_mask] = r_features
+
+                # todo: forward pass
 
     def train(self):
         # Initialize output metrics
@@ -74,6 +118,9 @@ class Trainer:
 
             # ------ start validating ------ #
             self.model.eval()
+
+            self._train_ensembles()
+
             torch.set_grad_enabled(False)
 
             # ---------- run on validation loader ---------- #

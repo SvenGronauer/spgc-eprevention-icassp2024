@@ -139,5 +139,6 @@ class PatientDataset(Dataset):
             'target': target_tensor,
             'user_id': torch.tensor(patient_id, dtype=torch.long)-1,
             'relapse_label': torch.tensor(relapse_label, dtype=torch.long),
+            'idx': idx,
         }
 

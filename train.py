@@ -115,17 +115,26 @@ def main():
         return torch.utils.data.dataloader.default_collate(batch)
 
     if args.cores == 1:  # use 1 cpu core for debugging purposes
-        loaders = {
-            'train': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.cores, pin_memory=True),
-            'val': torch.utils.data.DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=args.cores, pin_memory=True),
-            'train_distribution': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.cores, pin_memory=True)
-        }
-    else:
-        loaders = {
-            'train': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn),
-            'val': torch.utils.data.DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn),
-            'train_distribution': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn)
-        }
+        collate_fn = None
+
+    loaders = {
+        'train': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn),
+        'val': torch.utils.data.DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn),
+        'train_distribution': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn)
+    }
+
+    # ==============
+    for patient in ["P"+str(i) for i in range(1,args.num_patients+1)]:
+
+        train_set = PatientDataset(
+            features_path=args.features_path,
+            dataset_path=args.dataset_path,
+            mode='train',
+            window_size=args.window_size,
+            patient=patient)
+        loader_id = patient + '_train'
+        loaders[loader_id] = torch.utils.data.DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn)
+    # ==============
 
     # Trainer
     trainer = Trainer(

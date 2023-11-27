@@ -8,8 +8,8 @@ import os
 import numpy as np
 from sklearn.covariance import EllipticEnvelope
 
-class Trainer:
 
+class Trainer:
     ''' Class to train the classifier '''
 
     def __init__(self, model, optim, sched, loaders, args):
@@ -21,9 +21,58 @@ class Trainer:
         self.args = args
         self.criterion = nn.CrossEntropyLoss()
 
-
         self.current_best_score = 0
 
+    def _train_encoder_once(self, epoch: int):
+        epoch_metrics = {}
+        for batch in tqdm(self.dataloaders['train'], desc=f'Train, {epoch}/{self.args.epochs}'):
+
+            if batch is None:
+                continue
+
+            # x has shape: (16, 8, 23) == (batch_size, input_features, seq_len-1)
+            x = batch['data'].to(self.args.device)
+            user_ids = batch['user_id'].to(self.args.device)
+            labels = batch['target'].to(
+                self.args.device)  # of shape: (batch_size, input_features, 1)
+            labels = torch.squeeze(labels, dim=-1)
+            labels = labels[None, :, :].repeat(
+                [self.args.ensembles, 1, 1])  # to shape: (ens_size, batch_size, input_features)
+
+            # Forward
+            logits, features, mean = self.model(x)
+
+            # prediction loss
+            mse_loss = torch.sum(torch.pow(mean - labels, 2), dim=(0, 2))
+            total_loss = torch.mean(mse_loss)
+
+            # calculate accuracy
+            output_probabilities = torch.softmax(logits, dim=1)
+            predicted_class = torch.argmax(output_probabilities, dim=1)
+
+            acc = (predicted_class == user_ids).float().mean()
+
+            self.optim.zero_grad()
+
+            # Compute loss and backprop
+            # loss = self.criterion(logits, user_ids)
+            # loss.backward()
+
+            total_loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5)
+
+            self.optim.step()
+
+            # Log metrics
+            metrics = {
+                'loss': total_loss.item(),
+                'acc': acc.item(),
+            }
+
+            for k, v in metrics.items():
+                epoch_metrics[k] = epoch_metrics[k] + [v] if k in epoch_metrics else [v]
+
+        return epoch_metrics
 
     def train(self):
         # Initialize output metrics
@@ -33,59 +82,12 @@ class Trainer:
 
             # ------ train one epoch ------ #
 
-            epoch_metrics = {}
-
             self.model.train()
             torch.set_grad_enabled(True)
 
-            for batch in tqdm(self.dataloaders['train'], desc=f'Train, {epoch}/{self.args.epochs}'):
-                
-                if batch is None:
-                    continue
-
-                # x has shape: (16, 8, 23) == (batch_size, input_features, seq_len-1)
-                x = batch['data'].to(self.args.device)
-                user_ids = batch['user_id'].to(self.args.device)
-                labels = batch['target'].to(self.args.device)  # of shape: (batch_size, input_features, 1)
-                labels = torch.squeeze(labels, dim=-1)
-                labels = labels[None, :, :].repeat([self.args.ensembles, 1, 1])  # to shape: (ens_size, batch_size, input_features)
-
-                # Forward
-                logits, features, mean = self.model(x)
-
-                # prediction loss
-                mse_loss = torch.sum(torch.pow(mean - labels, 2), dim=(0, 2))
-                total_loss = torch.mean(mse_loss)
-
-                # calculate accuracy
-                output_probabilities = torch.softmax(logits, dim=1)
-                predicted_class = torch.argmax(output_probabilities, dim=1)
-
-                acc = (predicted_class == user_ids).float().mean()
-
-                self.optim.zero_grad()
-
-                # Compute loss and backprop
-                # loss = self.criterion(logits, user_ids)
-                # loss.backward()
-
-                total_loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5)
-
-                self.optim.step()
-
-
-                # Log metrics
-                metrics = {
-                        'loss': total_loss.item(),
-                        'acc': acc.item(),
-                    }
-
-                for k, v in metrics.items():
-                    epoch_metrics[k] = epoch_metrics[k] + [v] if k in epoch_metrics else [v]
+            epoch_metrics = self._train_encoder_once(epoch)
 
             self.sched.step()
-
 
             # ------ start validating ------ #
             self.model.eval()

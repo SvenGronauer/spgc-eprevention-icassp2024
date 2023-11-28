@@ -31,6 +31,7 @@ class Trainer:
                 out_features=self.args.output_dim,
                 ensemble_size=self.args.ensembles
             )
+            ensemble_head.to(self.args.device)
 
             self.mlps.append(ensemble_head)
             ps = ensemble_head.parameters()
@@ -171,6 +172,8 @@ class Trainer:
             # - calculate mean anomaly score for whole day
             # - anomaly score is Mahalanobis distance
 
+
+            # todo sven: try out variance
             scores = torch.sum(torch.pow(mean - targets, 2), dim=(0, 2))
             anomaly_score = torch.mean(scores).item()
             anomaly_scores.append(anomaly_score)

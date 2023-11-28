@@ -85,8 +85,8 @@ class Trainer:
             # print(x.shape)
             data_batch.append(x)
             target_batch.append(t)
-        data = torch.stack(data_batch)
-        targets = torch.stack(target_batch)
+        data = torch.stack(data_batch).to(self.args.device)
+        targets = torch.stack(target_batch).to(self.args.device)
         return data, targets
 
     def train_ensembles(self):

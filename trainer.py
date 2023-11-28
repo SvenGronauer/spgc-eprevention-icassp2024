@@ -3,10 +3,7 @@ import numpy as np
 from tqdm import tqdm
 import torch.nn as nn
 import sklearn.metrics
-# from sklearn.svm import OneClassSVM
 import os
-import numpy as np
-from sklearn.covariance import EllipticEnvelope
 from model import EnsembleLinear
 
 
@@ -29,19 +26,19 @@ class Trainer:
         for i in range(self.args.num_patients):
 
             # FIXME: change Linear to MLP
-            ensemble_mlp_head = EnsembleLinear(
+            ensemble_head = EnsembleLinear(
                 in_features=self.args.d_model,
                 out_features=self.args.output_dim,
                 ensemble_size=self.args.ensembles
             )
 
-            self.mlps.append(ensemble_mlp_head)
-            ps = ensemble_mlp_head.parameters()
+            self.mlps.append(ensemble_head)
+            ps = ensemble_head.parameters()
             self.optimizers.append(torch.optim.Adam(ps, lr=1e-3, weight_decay=1e-4))
 
-    def _train_encoder_once(self, epoch: int):
+    def train_encoder_once(self, epoch: int):
         epoch_metrics = {}
-        for batch in tqdm(self.dataloaders['train'], desc=f'Train, {epoch}/{self.args.epochs}'):
+        for batch in tqdm(self.dataloaders['train'], desc=f'Train Encoder ({epoch}/{self.args.epochs})'):
 
             if batch is None:
                 continue
@@ -73,7 +70,8 @@ class Trainer:
 
         return epoch_metrics
 
-    def resample_batch(self, indices, ensemble_size: int, dataset):
+    def resample_batch(self, indices, dataset):
+        ensemble_size = self.args.ensembles
         offsets = torch.zeros_like(indices)
         data_batch = []
         target_batch = []
@@ -90,10 +88,11 @@ class Trainer:
         targets = torch.stack(target_batch)
         return data, targets
 
-    def _train_ensembles(self):
+    def train_ensembles(self):
         k = self.args.ensembles
         for i in tqdm(range(self.args.num_patients), desc=f"Train Ensembles"):
-            ensemble_mlp_head = self.mlps[i]
+            ensemble_head = self.mlps[i]
+            ensemble_head.train()
             optim = self.optimizers[i]
             loader_str = "P" + str(i+1) +'_train'
             for batch in self.dataloaders[loader_str]:
@@ -114,7 +113,6 @@ class Trainer:
 
                 resampled_x, r_targets = self.resample_batch(
                     batch['idx'],
-                    k,
                     self.dataloaders[loader_str].dataset
                 )
                 r_targets = torch.squeeze(r_targets, dim=-1)
@@ -125,113 +123,129 @@ class Trainer:
                 batched_targets[ensemble_mask] = r_targets
 
                 # forward pass
-                mean = ensemble_mlp_head.forward(batched_features)
+                mean = ensemble_head.forward(batched_features)
                 mse_loss = torch.sum(torch.pow(mean - batched_targets, 2), dim=(0, 2))
                 total_loss = torch.mean(mse_loss)
 
                 optim.zero_grad()
                 total_loss.backward()
-                torch.nn.utils.clip_grad_norm_(ensemble_mlp_head.parameters(), 5)
+                torch.nn.utils.clip_grad_norm_(ensemble_head.parameters(), 5)
 
                 optim.step()
+
+    def _evaluate_ensembles(self, epoch: int):
+        k = self.args.ensembles
+        anomaly_scores = []
+        relapse_labels = []
+        user_ids = []
+
+        for batch in tqdm(self.dataloaders['val'], desc=f'Val, {epoch}/{self.args.epochs}'):
+
+            if batch is None:
+                continue
+            user_id = batch['user_id'].to(self.args.device)
+            if user_id.item() >= self.args.num_patients:
+                continue
+
+            # .Note: using batch_size = 1  -- x.shape = (1, 16, 6, 24)
+            x = batch['data'].to(self.args.device)
+            x = x.squeeze(0)  # remove fake batch dimension
+            ensemble_head = self.mlps[user_id.item()]
+            ensemble_head.eval()
+            # targets.shape = (1, 16, 2, 24)
+            targets = batch['target'].to(self.args.device)
+            targets = torch.squeeze(targets, dim=-1)
+            targets = torch.squeeze(targets, dim=0)
+
+            # targets.shape: (ens_size, num_day_samples, out_dim)
+            targets = targets[None, :, :].repeat([k, 1, 1])
+
+
+            features, _ = self.model(x)
+
+            batched_features = features[None, :, :].repeat([k, 1, 1])
+            # mean.shape = (ens_size, num_day_samples, output_dim)
+            mean = ensemble_head.forward(batched_features)
+
+            # Notes:
+            # - calculate mean anomaly score for whole day
+            # - anomaly score is Mahalanobis distance
+
+            scores = torch.sum(torch.pow(mean - targets, 2), dim=(0, 2))
+            anomaly_score = torch.mean(scores).item()
+            anomaly_scores.append(anomaly_score)
+            relapse_labels.append(batch['relapse_label'].item())
+            user_ids.append(batch['user_id'].item())
+
+        anomaly_scores = np.array(anomaly_scores)
+        relapse_labels = np.array(relapse_labels)
+        user_ids = np.array(user_ids)
+        return anomaly_scores, relapse_labels, user_ids
+
+    def calculate_metrics(self,  anomaly_scores, relapse_labels, user_ids, epoch_metrics):
+
+        all_auroc = []
+        all_auprc = []
+
+        # calculate for each user separately
+        for user in range(self.args.num_patients):
+            user_anomaly_scores = anomaly_scores[user_ids == user]
+            user_relapse_labels = relapse_labels[user_ids == user]
+
+            # Compute ROC Curve
+            precision, recall, _ = sklearn.metrics.precision_recall_curve(user_relapse_labels,
+                                                                          user_anomaly_scores)
+
+            fpr, tpr, _ = sklearn.metrics.roc_curve(user_relapse_labels, user_anomaly_scores)
+
+            # # Compute AUROC
+            auroc = sklearn.metrics.auc(fpr, tpr)
+
+            # # Compute AUPRC
+            auprc = sklearn.metrics.auc(recall, precision)
+
+            all_auroc.append(auroc)
+            all_auprc.append(auprc)
+            print(f'USER: {user}, AUROC: {auroc:.4f}, AUPRC: {auprc:.4f}')
+
+        total_auroc = sum(all_auroc) / len(all_auroc)
+        total_auprc = sum(all_auprc) / len(all_auprc)
+        total_avg = (total_auroc + total_auprc) / 2
+        print(
+            f'Total AUROC: {total_auroc:.4f}, Total AUPRC: {total_auprc:.4f}, Total AVG: {total_avg:.4f}, Train Loss: {np.mean(epoch_metrics["loss"]):.4f}')
+
+        # save best model
+        if total_avg > self.current_best_score:
+            self.current_best_score = total_avg
+            os.makedirs(self.args.save_path, exist_ok=True)
+            torch.save(self.model.state_dict(),
+                       os.path.join(self.args.save_path, f'best_model.pth'))
+            print('Saved best model!')
 
     def train(self):
         # Initialize output metrics
 
         # Process each epoch
         for epoch in range(self.args.epochs):
-
-            # ------ train one epoch ------ #
+            print("*"*55)
+            print(f"Start epoch {epoch}/{self.args.epochs}")
 
             self.model.train()
             torch.set_grad_enabled(True)
 
-            epoch_metrics = self._train_encoder_once(epoch)
+            epoch_metrics = self.train_encoder_once(epoch)
 
             self.sched.step()
 
-            # ------ start validating ------ #
             self.model.eval()
-
-            self._train_ensembles()
+            self.train_ensembles()
 
             torch.set_grad_enabled(False)
 
-            # ---------- run on validation loader ---------- #
             print('Calculating accuracy on validation set and anomaly scores...')
-            anomaly_scores = []
-            relapse_labels = []
-            user_ids = []
-
-            for batch in tqdm(self.dataloaders['val'], desc=f'Val, {epoch}/{self.args.epochs}'):
-
-                if batch is None:
-                    continue
-                # data is of size: (1, windowsPerDay, 8, 23)
-                x = batch['data'].to(self.args.device)
-                user_id = batch['user_id'].to(self.args.device)
-                # labels are of size: (1, 16, 8, 1)
-                labels = batch['target'].to(self.args.device)
-                labels = torch.squeeze(labels, 3)
-                labels = torch.squeeze(labels, 0)
-                labels = labels[None, :, :].repeat([self.args.ensembles, 1, 1])  # to shape: (ens_size, batch_size, input_features)
-
-                x = x.squeeze(0) # remove fake batch dimension
-
-                # Forward
-                logits, features, mean = self.model(x)
-
-                # Notes:
-                # - calculate mean anomaly score for whole day
-                # - anomaly score is Mahalanobis distance
-
-                scores = torch.sum(torch.pow(mean - labels, 2), dim=(0, 2)) - 100
-                anomaly_score = torch.mean(scores).item()
-                anomaly_scores.append(anomaly_score)
-                relapse_labels.append(batch['relapse_label'].item())
-                user_ids.append(batch['user_id'].item())
-            
-            anomaly_scores = np.array(anomaly_scores)
-            relapse_labels = np.array(relapse_labels)
-            user_ids = np.array(user_ids)
+            anomaly_scores, relapse_labels, user_ids = self._evaluate_ensembles(epoch)
 
             print('Calculating metrics...')
-
-            all_auroc = []
-            all_auprc = []
-
-            # calculate for each user separately
-            for user in range(self.args.num_patients):
-                user_anomaly_scores = anomaly_scores[user_ids==user]
-                user_relapse_labels = relapse_labels[user_ids==user]
-
-                # Compute ROC Curve
-                precision, recall, _ = sklearn.metrics.precision_recall_curve(user_relapse_labels, user_anomaly_scores)
-
-                fpr, tpr, _ = sklearn.metrics.roc_curve(user_relapse_labels, user_anomaly_scores)
-
-                # # Compute AUROC
-                auroc = sklearn.metrics.auc(fpr, tpr)
-
-                # # Compute AUPRC
-                auprc = sklearn.metrics.auc(recall, precision)
-
-                all_auroc.append(auroc)
-                all_auprc.append(auprc)
-                print(f'USER: {user}, AUROC: {auroc:.4f}, AUPRC: {auprc:.4f}')
-
-            total_auroc = sum(all_auroc)/len(all_auroc)
-            total_auprc = sum(all_auprc)/len(all_auprc)
-            total_avg = (total_auroc + total_auprc) / 2
-            print(f'Total AUROC: {total_auroc:.4f}, Total AUPRC: {total_auprc:.4f}, Total AVG: {total_avg:.4f}, Train Loss: {np.mean(epoch_metrics["loss"]):.4f}, Train Acc: {np.mean(epoch_metrics["acc"]):.4f}')
-
-
-            # save best model
-            if total_avg > self.current_best_score:
-                self.current_best_score = total_avg
-                os.makedirs(self.args.save_path, exist_ok=True)
-                torch.save(self.model.state_dict(), os.path.join(self.args.save_path, f'best_model.pth'))
-                print('Saved best model!')
+            self.calculate_metrics(anomaly_scores, relapse_labels, user_ids, epoch_metrics)
 
         
-

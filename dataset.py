@@ -122,9 +122,11 @@ class PatientDataset(Dataset):
                     sequence = self.scaler.transform(sequence)
                     sequences.append(sequence)
 
-                    tar = day_data.iloc[start_idx:start_idx + self.window_size]
-                    tar = tar[self.target_columns].copy().to_numpy()
-                    targets.append(tar)
+                    # use only last time stamp in sequence
+                    target = day_data.iloc[start_idx + self.window_size]
+                    target = target[self.target_columns].copy().to_numpy()
+
+                    targets.append(target)
 
             sequence = np.stack(sequences)
             target = np.stack(targets)
@@ -132,8 +134,7 @@ class PatientDataset(Dataset):
             sequence_tensor = sequence_tensor.permute(0, 2, 1)
 
             target_tensor = torch.tensor(target, dtype=torch.float32)
-            target_tensor = target_tensor.permute(0, 2, 1)
-        
+
         return {
             'data': sequence_tensor,
             'target': target_tensor,

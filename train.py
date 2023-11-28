@@ -119,9 +119,9 @@ def main():
         collate_fn = None
 
     loaders = {
-        'train': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn),
-        'val': torch.utils.data.DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn),
-        'train_distribution': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn)
+        'train': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.cores, pin_memory=True),
+        'val': torch.utils.data.DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=args.cores, pin_memory=True),
+        'train_distribution': torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.cores, pin_memory=True)
     }
 
     # ==============
@@ -134,7 +134,7 @@ def main():
             window_size=args.window_size,
             patient=patient)
         loader_id = patient + '_train'
-        loaders[loader_id] = torch.utils.data.DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn)
+        loaders[loader_id] = torch.utils.data.DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=args.cores, pin_memory=True)
     # ==============
 
     # Trainer

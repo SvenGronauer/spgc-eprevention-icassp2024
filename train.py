@@ -11,7 +11,6 @@ import os
 def get_device(device_str="auto") -> str:
     if device_str == "auto":
         if torch.cuda.is_available():
-            torch.set_default_tensor_type(torch.cuda.FloatTensor)
             return "cuda"
         else:
             return "cpu"

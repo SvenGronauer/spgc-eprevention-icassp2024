@@ -168,14 +168,11 @@ class Trainer:
             # mean.shape = (ens_size, num_day_samples, output_dim)
             mean = ensemble_head.forward(batched_features)
 
-            # Notes:
-            # - calculate mean anomaly score for whole day
-            # - anomaly score is Mahalanobis distance
+            distances = torch.sum(torch.pow(mean - targets, 2), dim=(2, ))
+            mean_dist = torch.mean(distances, 0)
+            var_scores = (distances - mean_dist)**2
+            anomaly_score = torch.mean(var_scores).item()
 
-
-            # todo sven: try out variance
-            scores = torch.sum(torch.pow(mean - targets, 2), dim=(0, 2))
-            anomaly_score = torch.mean(scores).item()
             anomaly_scores.append(anomaly_score)
             relapse_labels.append(batch['relapse_label'].item())
             user_ids.append(batch['user_id'].item())

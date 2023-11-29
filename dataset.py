@@ -8,6 +8,21 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import numpy as np
 
 
+def calculate_time_from_sincos(sin_t, cos_t):
+    angle = np.arctan2(sin_t, cos_t)
+    time_value = (angle + 2. * np.pi) % (2. * np.pi)
+    minutes = (time_value / (2. * np.pi / (60 * 24)))
+    return minutes
+
+
+def calculate_sincos_from_minutes(minutes):
+    time_value = minutes * (2. * np.pi / (60 * 24))
+    sin_t = np.sin(time_value)
+    cos_t = np.cos(time_value)
+    return sin_t, cos_t
+
+
+
 class PatientDataset(Dataset):
     def __init__(
             self,
@@ -21,7 +36,8 @@ class PatientDataset(Dataset):
         self.dataset_path = dataset_path # to load relapses
         self.mode = mode
         self.window_size = window_size
-        
+
+        # todo sven: add gyr_norm and steps
         self.columns_to_scale = ['acc_norm', 'heartRate_mean', 'rRInterval_mean', 'rRInterval_rmssd', 'rRInterval_sdnn', 'rRInterval_lombscargle_power_high']
         self.data_columns = self.columns_to_scale
         self.target_columns = ['sin_t', 'cos_t']
@@ -45,25 +61,42 @@ class PatientDataset(Dataset):
     def create_data(self, patient: str, mode: str, all_data: pd.DataFrame):
         patient_dir = os.path.join(self.features_path, patient)
         for subfolder in os.listdir(patient_dir):
-            if (mode == 'train' and 'train' in subfolder) or (mode == 'val' and 'val' in subfolder) or (mode == 'test' and 'test' in subfolder):
+            if ('train' in mode and 'train' in subfolder and subfolder.endswith('train')) or \
+                    (mode == 'val' and 'val' in subfolder and subfolder.endswith('val')) or (mode == 'test' and 'test' in subfolder):
                 subfolder_dir = os.path.join(patient_dir, subfolder)
                 for file in os.listdir(subfolder_dir):
-                    if file.endswith('.csv'):
+                    if file.endswith('features_stretched_w_steps.csv'):
                         file_path = os.path.join(subfolder_dir, file)
-                        df = pd.read_csv(file_path, index_col=0)
+                        # print(f"open file: {file_path}")
+                        df = pd.read_csv(file_path)
                         df = df.replace([np.inf, -np.inf], np.nan)
                         df = df.dropna() # something better could be used here - e.g. imputing
 
+                        try:
+                            df[self.target_columns]
+                        except KeyError:
+                            mins = df['mins']
+                            sin_t, cos_t = calculate_sincos_from_minutes(mins)
+                            df['sin_t'] = sin_t
+                            df['cos_t'] = cos_t
+
                         all_data = pd.concat([all_data, df])
 
-                        day_indices = df['day_index'].unique()
+                        day_indices = df['day'].unique()
 
-                        relapse_df = pd.read_csv(os.path.join(self.dataset_path, patient, subfolder, 'relapses.csv'))
+                        if "train" not in mode:
+                            relapse_data_path = os.path.join(self.features_path, patient, subfolder, 'relapse_stretched.csv')
+                            relapse_df = pd.read_csv(relapse_data_path)
 
                         for day_index in day_indices:
-                            day_data = df[df['day_index'] == day_index].copy()
+                            day_data = df[df['day'] == day_index].copy()
+                            if "train" not in mode:
+                                try:
+                                    relapse_label = relapse_df[relapse_df['day'] == day_index]['relapse'].values[0]
+                                except:
+                                    relapse_label = 0
 
-                            relapse_label = relapse_df[relapse_df['day_index'] == day_index]['relapse'].values[0]
+                            # relapse_label = relapse_df[relapse_df['day_index'] == day_index]['relapse'].values[0]
 
                             if len(day_data) < self.window_size:
                                 continue
@@ -80,6 +113,7 @@ class PatientDataset(Dataset):
                                     slc = slice(start_idx + self.window_size - 1, start_idx + self.window_size)
                                     target = day_data.iloc[slc]
                                     target = target[self.target_columns].copy().to_numpy()
+                                    relapse_label = 0  # not known for train set
                                     self.data.append((sequence, target, int(patient[1:]), relapse_label))
                             else:
                                 # during validation we need all data to get all subsequences

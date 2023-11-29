@@ -155,8 +155,9 @@ class Trainer:
             ensemble_head.eval()
             # targets.shape = (1, 16, 2, 24)
             targets = batch['target'].to(self.args.device)
-            targets = torch.squeeze(targets, dim=-1)
-            targets = torch.squeeze(targets, dim=0)
+            targets = torch.squeeze(targets)
+            if len(targets) < 2:
+                targets = torch.reshape(targets, (1, -1))
 
             # targets.shape: (ens_size, num_day_samples, out_dim)
             targets = targets[None, :, :].repeat([k, 1, 1])

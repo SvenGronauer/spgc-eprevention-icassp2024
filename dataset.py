@@ -37,8 +37,7 @@ class PatientDataset(Dataset):
         self.mode = mode
         self.window_size = window_size
 
-        # todo sven: add gyr_norm and steps
-        self.columns_to_scale = ['acc_norm', 'heartRate_mean', 'rRInterval_mean', 'rRInterval_rmssd', 'rRInterval_sdnn', 'rRInterval_lombscargle_power_high']
+        self.columns_to_scale = ['acc_norm', 'gyr_norm', 'heartRate_mean', 'rRInterval_mean', 'rRInterval_rmssd', 'rRInterval_sdnn', 'rRInterval_lombscargle_power_high', 'steps']
         self.data_columns = self.columns_to_scale
         self.target_columns = ['sin_t', 'cos_t']
 

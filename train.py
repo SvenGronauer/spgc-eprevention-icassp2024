@@ -32,7 +32,7 @@ def parse():
 
     # transformer parameters
     parser.add_argument('--window_size', type=int, default=48)
-    parser.add_argument('--input_features', type=int, default=6)
+    parser.add_argument('--input_features', type=int, default=8)
     parser.add_argument('--output_dim', type=int, default=2)
     parser.add_argument('--d_model', type=int, default=32)
     parser.add_argument('--nhead', type=int, default=8)

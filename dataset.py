@@ -46,6 +46,8 @@ class PatientDataset(Dataset):
 
         if patient is None:  # use data of all patients
             for patient in sorted(os.listdir(features_path)):
+                if patient == ".DS_Store":
+                    continue
                 all_data = self.create_data(patient, mode, all_data)
         else:
             all_data = self.create_data(patient, mode, all_data)

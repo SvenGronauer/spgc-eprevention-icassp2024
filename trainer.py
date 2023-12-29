@@ -25,12 +25,14 @@ class Trainer:
         self.optimizers = []
         for i in range(self.args.num_patients):
 
-            # FIXME: change Linear to MLP
-            ensemble_head = EnsembleLinear(
-                in_features=self.args.d_model,
-                out_features=self.args.output_dim,
-                ensemble_size=self.args.ensembles
+            ensemble_head = nn.Sequential(
+                EnsembleLinear(self.args.d_model,self.args.d_model,self.args.ensembles),
+                nn.ReLU(),
+                EnsembleLinear(self.args.d_model,self.args.d_model,self.args.ensembles),
+                nn.ReLU(),
+                EnsembleLinear(self.args.d_model,self.args.output_dim,self.args.ensembles),
             )
+
             ensemble_head.to(self.args.device)
 
             self.mlps.append(ensemble_head)

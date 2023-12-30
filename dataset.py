@@ -31,11 +31,14 @@ class PatientDataset(Dataset):
             patient: Optional[str] = None,  # if None then use data of all patients
             mode='train',
             scaler=None,
-            window_size=48):
+            window_size=48,
+            stride=12,
+    ):
         self.features_path = features_path
         self.dataset_path = dataset_path # to load relapses
         self.mode = mode
         self.window_size = window_size
+        self.stride = stride
 
         self.columns_to_scale = ['acc_norm', 'gyr_norm', 'heartRate_mean', 'rRInterval_mean', 'rRInterval_rmssd', 'rRInterval_sdnn', 'rRInterval_lombscargle_power_high', 'steps']
         self.data_columns = self.columns_to_scale
@@ -53,11 +56,13 @@ class PatientDataset(Dataset):
             all_data = self.create_data(patient, mode, all_data)
 
         if scaler is None:
-            print(mode, "fitting scaler")
+            # print(mode, "fitting scaler")
             self.scaler = MinMaxScaler()
             self.scaler.fit(all_data[self.columns_to_scale].dropna().to_numpy())
         else:
             self.scaler = scaler
+
+        print(f"Created dataset `{mode}`\tfor Patient {patient} of size: {len(self)}")
 
     def create_data(self, patient: str, mode: str, all_data: pd.DataFrame):
         patient_dir = os.path.join(self.features_path, patient)
@@ -105,7 +110,7 @@ class PatientDataset(Dataset):
                             # day_index  acc_norm  heartRate_mean  rRInterval_mean, rRInterval_sdnn, rRInterval_lombscargle,  gyr_norm     sin_t     cos_t
                             if mode == "train":
                                 # gather all data in this day with an overlap window of 12 (1H) and for duration of window_size
-                                for start_idx in range(0, len(day_data) - self.window_size, 12):
+                                for start_idx in range(0, len(day_data) - self.window_size, self.stride):
                                     # sequence is of size: (window_size, input_features)
                                     sequence = day_data.iloc[start_idx:start_idx+self.window_size]
                                     sequence = sequence[self.data_columns].copy().to_numpy()

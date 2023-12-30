@@ -10,20 +10,22 @@ from model import EnsembleLinear
 class Trainer:
     ''' Class to train the classifier '''
 
-    def __init__(self, model, optim, sched, loaders, args):
+    def __init__(self, models, optims, scheds, loaders, args):
 
-        self.model = model
-        self.optim = optim
-        self.sched = sched
+        self.models = models
+        self.optims = optims
+        self.scheds = scheds
         self.dataloaders = loaders
         self.args = args
         self.criterion = nn.MSELoss()
 
-        self.current_best_score = 0
+        self.current_best_avgs = [0 for _ in range(len(self.models))]
+        self.current_best_aurocs = [0 for _ in range(len(self.models))]
+        self.current_best_auprcs = [0 for _ in range(len(self.models))]
 
         self.mlps = []
         self.optimizers = []
-        for i in range(self.args.num_patients):
+        for i in range(len(self.models)):
 
             ensemble_head = nn.Sequential(
                 EnsembleLinear(self.args.d_model,self.args.d_model,self.args.ensembles),
@@ -39,9 +41,8 @@ class Trainer:
             ps = ensemble_head.parameters()
             self.optimizers.append(torch.optim.Adam(ps, lr=1e-3, weight_decay=1e-4))
 
-    def train_encoder_once(self, epoch: int):
-        epoch_metrics = {}
-        for batch in tqdm(self.dataloaders['train'], desc=f'Train Encoder ({epoch}/{self.args.epochs})'):
+    def train_encoder_once(self, epoch: int, i: int, epoch_metrics: dict):
+        for batch in tqdm(self.dataloaders[i]['train'], desc=f'Train Encoder ({i+1}/{len(self.models)})'):
 
             if batch is None:
                 continue
@@ -53,15 +54,15 @@ class Trainer:
             labels = torch.squeeze(labels, dim=-1)
 
             # Forward
-            features, mean = self.model(x)
+            features, mean = self.models[i](x)
 
             mse_loss = self.criterion(mean, labels)
 
-            self.optim.zero_grad()
+            self.optims[i].zero_grad()
             mse_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5)
+            torch.nn.utils.clip_grad_norm_(self.models[i].parameters(), 5)
 
-            self.optim.step()
+            self.optims[i].step()
 
             # Log metrics
             metrics = {
@@ -91,58 +92,58 @@ class Trainer:
         targets = torch.stack(target_batch).to(self.args.device)
         return data, targets
 
-    def train_ensembles(self):
+    def train_ensemble(self, i: int):
         k = self.args.ensembles
-        for i in tqdm(range(self.args.num_patients), desc=f"Train Ensembles"):
-            ensemble_head = self.mlps[i]
-            ensemble_head.train()
-            optim = self.optimizers[i]
-            loader_str = "P" + str(i+1) +'_train'
-            for batch in self.dataloaders[loader_str]:
-                if batch is None:
-                    continue
+        ensemble_head = self.mlps[i]
+        ensemble_head.train()
+        optim = self.optimizers[i]
+        size = len(self.dataloaders[i]['train'])
 
-                # x has shape: (16, 6, 24) == (batch_size, input_features, seq_len)
-                x = batch['data'].to(self.args.device)
-                targets = batch['target'].to(self.args.device)
-                targets = torch.squeeze(targets, dim=-1)
-                # Forward
-                features, _ = self.model(x)
+        for batch in tqdm(self.dataloaders[i]['train'], desc=f'Train Ensemble ({i+1}/{len(self.models)})'):
+            if batch is None:
+                continue
 
-                batched_features = features[None, :, :].repeat([k, 1, 1])
-                batched_targets = targets[None, :, :].repeat([k, 1, 1])
-                # print(f"batched_features.shape: \n{batched_features.shape}")
-                ensemble_mask = batch['idx'] % k
+            # x has shape: (16, 6, 24) == (batch_size, input_features, seq_len)
+            x = batch['data'].to(self.args.device)
+            targets = batch['target'].to(self.args.device)
+            targets = torch.squeeze(targets, dim=-1)
+            # Forward
+            features, _ = self.models[i](x)
 
-                resampled_x, r_targets = self.resample_batch(
-                    batch['idx'],
-                    self.dataloaders[loader_str].dataset
-                )
-                r_targets = torch.squeeze(r_targets, dim=-1)
-                # resampled_x.shape = torch.Size([16, 6, 24])
-                r_features, _ = self.model(resampled_x)
-                # print(f"r_features.shape: \n{r_features.shape}")
-                batched_features[ensemble_mask] = r_features
-                batched_targets[ensemble_mask] = r_targets
+            batched_features = features[None, :, :].repeat([k, 1, 1])
+            batched_targets = targets[None, :, :].repeat([k, 1, 1])
+            # print(f"batched_features.shape: \n{batched_features.shape}")
+            ensemble_mask = batch['idx'] % k
 
-                # forward pass
-                mean = ensemble_head.forward(batched_features)
-                mse_loss = torch.sum(torch.pow(mean - batched_targets, 2), dim=(0, 2))
-                total_loss = torch.mean(mse_loss)
+            resampled_x, r_targets = self.resample_batch(
+                batch['idx'],
+                self.dataloaders[i]['train'].dataset
+            )
+            r_targets = torch.squeeze(r_targets, dim=-1)
+            # resampled_x.shape = torch.Size([16, 6, 24])
+            r_features, _ = self.models[i](resampled_x)
+            # print(f"r_features.shape: \n{r_features.shape}")
+            batched_features[ensemble_mask] = r_features
+            batched_targets[ensemble_mask] = r_targets
 
-                optim.zero_grad()
-                total_loss.backward()
-                torch.nn.utils.clip_grad_norm_(ensemble_head.parameters(), 5)
+            # forward pass
+            mean = ensemble_head.forward(batched_features)
+            mse_loss = torch.sum(torch.pow(mean - batched_targets, 2), dim=(0, 2))
+            total_loss = torch.mean(mse_loss)
 
-                optim.step()
+            optim.zero_grad()
+            total_loss.backward()
+            torch.nn.utils.clip_grad_norm_(ensemble_head.parameters(), 5)
 
-    def _evaluate_ensembles(self, epoch: int):
+            optim.step()
+
+    def evaluate_ensembles(self, epoch: int, i: int):
         k = self.args.ensembles
         anomaly_scores = []
         relapse_labels = []
         user_ids = []
 
-        for batch in tqdm(self.dataloaders['val'], desc=f'Val, {epoch}/{self.args.epochs}'):
+        for batch in self.dataloaders[i]['val']:
 
             if batch is None:
                 continue
@@ -165,7 +166,7 @@ class Trainer:
             targets = targets[None, :, :].repeat([k, 1, 1])
 
 
-            features, _ = self.model(x)
+            features, _ = self.models[i](x)
 
             batched_features = features[None, :, :].repeat([k, 1, 1])
             # mean.shape = (ens_size, num_day_samples, output_dim)
@@ -176,6 +177,9 @@ class Trainer:
             var_scores = (distances - mean_dist)**2
             anomaly_score = torch.mean(var_scores).item()
 
+            # TODO Sven: torch.clip(anomaly_score, 0, 1)
+            # ...
+
             anomaly_scores.append(anomaly_score)
             relapse_labels.append(batch['relapse_label'].item())
             user_ids.append(batch['user_id'].item())
@@ -185,70 +189,58 @@ class Trainer:
         user_ids = np.array(user_ids)
         return anomaly_scores, relapse_labels, user_ids
 
-    def calculate_metrics(self,  anomaly_scores, relapse_labels, user_ids, epoch_metrics):
+    def calculate_metrics(self, user: int, anomaly_scores, relapse_labels, user_ids, epoch_metrics):
 
+        assert np.unique(user_ids) == user
+
+        # Compute ROC Curve
+        precision, recall, _ = sklearn.metrics.precision_recall_curve(relapse_labels,anomaly_scores)
+
+        fpr, tpr, _ = sklearn.metrics.roc_curve(relapse_labels, anomaly_scores)
+
+        # # Compute AUROC
+        auroc = sklearn.metrics.auc(fpr, tpr)
+
+        # # Compute AUPRC
+        auprc = sklearn.metrics.auc(recall, precision)
+
+        avg = (auroc + auprc) / 2
+        print(f'\tUSER: {user}, AUROC: {auroc:.4f}, AUPRC: {auprc:.4f}, AVG: {avg:.4f}')
+        return auroc, auprc
+
+    def validate(self, epoch: int, epoch_metrics: dict):
         all_auroc = []
         all_auprc = []
+        for i in range(len(self.models)):
+            # print('Calculating accuracy on validation set and anomaly scores...')
+            anomaly_scores, relapse_labels, user_ids = self.evaluate_ensembles(epoch, i)
 
-        # calculate for each user separately
-        for user in range(self.args.num_patients):
-            user_anomaly_scores = anomaly_scores[user_ids == user]
-            user_relapse_labels = relapse_labels[user_ids == user]
-
-            # Compute ROC Curve
-            precision, recall, _ = sklearn.metrics.precision_recall_curve(user_relapse_labels,
-                                                                          user_anomaly_scores)
-
-            fpr, tpr, _ = sklearn.metrics.roc_curve(user_relapse_labels, user_anomaly_scores)
-
-            # # Compute AUROC
-            auroc = sklearn.metrics.auc(fpr, tpr)
-
-            # # Compute AUPRC
-            auprc = sklearn.metrics.auc(recall, precision)
-
+            # print('Calculating metrics...')
+            auroc, auprc = self.calculate_metrics(i, anomaly_scores, relapse_labels, user_ids, epoch_metrics)
             all_auroc.append(auroc)
             all_auprc.append(auprc)
-            print(f'USER: {user}, AUROC: {auroc:.4f}, AUPRC: {auprc:.4f}')
-
         total_auroc = sum(all_auroc) / len(all_auroc)
         total_auprc = sum(all_auprc) / len(all_auprc)
         total_avg = (total_auroc + total_auprc) / 2
-        print(
-            f'Total AUROC: {total_auroc:.4f}, Total AUPRC: {total_auprc:.4f}, Total AVG: {total_avg:.4f}, Train Loss: {np.mean(epoch_metrics["loss"]):.4f}')
+        print(f'TOTAL\tAUROC: {total_auroc:.4f},  AUPRC: {total_auprc:.4f}, Total AVG: {total_avg:.4f}, '
+              f'Train Loss: {np.mean(epoch_metrics["loss"]):.4f}')
 
-        # save best model
-        if total_avg > self.current_best_score:
-            self.current_best_score = total_avg
-            os.makedirs(self.args.save_path, exist_ok=True)
-            torch.save(self.model.state_dict(),
-                       os.path.join(self.args.save_path, f'best_model.pth'))
-            print('Saved best model!')
 
     def train(self):
-        # Initialize output metrics
-
-        # Process each epoch
         for epoch in range(self.args.epochs):
             print("*"*55)
-            print(f"Start epoch {epoch}/{self.args.epochs}")
+            print(f"Start epoch {epoch+1}/{self.args.epochs}")
+            epoch_metrics = {}
+            for i in range(len(self.models)):
 
-            self.model.train()
-            torch.set_grad_enabled(True)
+                # ------ start training ------ #
+                self.models[i].train()
+                epoch_metrics = self.train_encoder_once(epoch, i, epoch_metrics)
+                self.scheds[i].step()
 
-            epoch_metrics = self.train_encoder_once(epoch)
+                self.models[i].eval()
+                self.train_ensemble(i)
 
-            self.sched.step()
-
-            self.model.eval()
-            self.train_ensembles()
-
-            torch.set_grad_enabled(False)
-
-            print('Calculating accuracy on validation set and anomaly scores...')
-            anomaly_scores, relapse_labels, user_ids = self._evaluate_ensembles(epoch)
-
-            print('Calculating metrics...')
-            self.calculate_metrics(anomaly_scores, relapse_labels, user_ids, epoch_metrics)
-
-        
+            # ------ start validating ------ #
+            with torch.no_grad():
+                self.validate(epoch, epoch_metrics)

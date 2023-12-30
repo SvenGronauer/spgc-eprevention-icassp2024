@@ -137,11 +137,14 @@ class Trainer:
 
             optim.step()
 
-    def evaluate_ensembles(self, epoch: int, i: int):
+    def evaluate_ensembles(self, epoch: int, i: int, train_dist_anomaly_scores: dict):
         k = self.args.ensembles
         anomaly_scores = []
         relapse_labels = []
         user_ids = []
+
+        _mean = np.mean(train_dist_anomaly_scores[i])
+        _max, _min = np.max(train_dist_anomaly_scores[i]), np.min(train_dist_anomaly_scores[i])
 
         for batch in self.dataloaders[i]['val']:
 
@@ -165,7 +168,6 @@ class Trainer:
             # targets.shape: (ens_size, num_day_samples, out_dim)
             targets = targets[None, :, :].repeat([k, 1, 1])
 
-
             features, _ = self.models[i](x)
 
             batched_features = features[None, :, :].repeat([k, 1, 1])
@@ -175,16 +177,14 @@ class Trainer:
             distances = torch.sum(torch.pow(mean - targets, 2), dim=(2, ))
             mean_dist = torch.mean(distances, 0)
             var_scores = (distances - mean_dist)**2
-            anomaly_score = torch.mean(var_scores).item()
-
-            # TODO Sven: torch.clip(anomaly_score, 0, 1)
-            # ...
+            mean_var = torch.mean(var_scores).item()
+            anomaly_score = (mean_var - _mean) / (_max - _min)
 
             anomaly_scores.append(anomaly_score)
             relapse_labels.append(batch['relapse_label'].item())
             user_ids.append(batch['user_id'].item())
 
-        anomaly_scores = np.array(anomaly_scores)
+        anomaly_scores = (np.array(anomaly_scores) > 0.0).astype(np.float64)
         relapse_labels = np.array(relapse_labels)
         user_ids = np.array(user_ids)
         return anomaly_scores, relapse_labels, user_ids
@@ -208,12 +208,39 @@ class Trainer:
         print(f'\tUSER: {user}, AUROC: {auroc:.4f}, AUPRC: {auprc:.4f}, AVG: {avg:.4f}')
         return auroc, auprc
 
-    def validate(self, epoch: int, epoch_metrics: dict):
+    def get_train_dist_anomaly_scores(self, epoch: int, i: int):
+        k = self.args.ensembles
+        anomaly_scores = []
+        for batch in self.dataloaders[i]['train_dist']:
+
+            if batch is None:
+                continue
+
+            x = batch['data'].to(self.args.device)
+            ensemble_head = self.mlps[i]
+            targets = batch['target'].to(self.args.device)
+            targets = torch.squeeze(targets, dim=-1)
+            batched_targets = targets[None, :, :].repeat([k, 1, 1])
+
+            features, _ = self.models[i](x)
+
+            batched_features = features[None, :, :].repeat([k, 1, 1])
+            # mean.shape = (ens_size, num_day_samples, output_dim)
+            mean = ensemble_head.forward(batched_features)
+
+            distances = torch.sum(torch.pow(mean - batched_targets, 2), dim=(2,))
+            mean_dist = torch.mean(distances, 0)
+            var_scores = (distances - mean_dist) ** 2
+            anomaly_score = torch.mean(var_scores).item()
+            anomaly_scores.append(anomaly_score)
+        return anomaly_scores
+
+    def validate(self, epoch: int, epoch_metrics: dict, train_dist_anomaly_scores: dict):
         all_auroc = []
         all_auprc = []
         for i in range(len(self.models)):
             # print('Calculating accuracy on validation set and anomaly scores...')
-            anomaly_scores, relapse_labels, user_ids = self.evaluate_ensembles(epoch, i)
+            anomaly_scores, relapse_labels, user_ids = self.evaluate_ensembles(epoch, i, train_dist_anomaly_scores)
 
             # print('Calculating metrics...')
             auroc, auprc = self.calculate_metrics(i, anomaly_scores, relapse_labels, user_ids, epoch_metrics)
@@ -231,6 +258,7 @@ class Trainer:
             print("*"*55)
             print(f"Start epoch {epoch+1}/{self.args.epochs}")
             epoch_metrics = {}
+            train_dist_anomaly_scores = {}
             for i in range(len(self.models)):
 
                 # ------ start training ------ #
@@ -240,7 +268,9 @@ class Trainer:
 
                 self.models[i].eval()
                 self.train_ensemble(i)
+                with torch.no_grad():
+                    train_dist_anomaly_scores[i] = self.get_train_dist_anomaly_scores(epoch, i)
 
             # ------ start validating ------ #
             with torch.no_grad():
-                self.validate(epoch, epoch_metrics)
+                self.validate(epoch, epoch_metrics, train_dist_anomaly_scores)

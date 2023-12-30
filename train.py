@@ -81,7 +81,7 @@ def main():
 
     schedulers = [MultiStepLR(optimizers[i], milestones=[args.epochs//2, args.epochs//4*3], gamma=0.1) for i in range(args.num_patients)]
 
-    train_datasets, valid_datasets = [], []
+    train_datasets, train_dist_datasets, valid_datasets = [], [], []
 
     for patient in ["P"+str(i) for i in range(1,args.num_patients+1)]:
         train_dataset = PatientDataset(features_path=args.features_path,
@@ -94,12 +94,16 @@ def main():
                                        mode='val', scaler=train_dataset.scaler, window_size=args.window_size,
                                        stride=args.stride, patient=patient))
 
+        train_dist_datasets.append(PatientDataset(features_path=args.features_path,
+                                       dataset_path=args.dataset_path,
+                                       mode='train', window_size=args.window_size, stride=args.stride, patient=patient))
+
     all_loaders = []
     for i in range(args.num_patients):
         loaders = {
             'train': torch.utils.data.DataLoader(train_datasets[i], batch_size=args.batch_size, shuffle=True, num_workers=args.cores, pin_memory=True),
             'val': torch.utils.data.DataLoader(valid_datasets[i], batch_size=1, shuffle=False, num_workers=args.cores, pin_memory=True),
-            # 'train_distribution': torch.utils.data.DataLoader(train_dist_datasets[i], batch_size=1, shuffle=False, num_workers=args.cores, pin_memory=True, collate_fn=collate_fn)
+            'train_dist': torch.utils.data.DataLoader(train_dist_datasets[i], batch_size=1, shuffle=False, num_workers=args.cores, pin_memory=True)
         }
         all_loaders.append(loaders)
 

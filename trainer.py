@@ -19,9 +19,9 @@ class Trainer:
         self.args = args
         self.criterion = nn.MSELoss()
 
-        self.current_best_avgs = [0 for _ in range(len(self.models))]
-        self.current_best_aurocs = [0 for _ in range(len(self.models))]
-        self.current_best_auprcs = [0 for _ in range(len(self.models))]
+        self.current_best_avgs = [-np.inf for _ in range(len(self.models))]
+        self.current_best_aurocs = [-np.inf for _ in range(len(self.models))]
+        self.current_best_auprcs = [-np.inf for _ in range(len(self.models))]
 
         self.mlps = []
         self.optimizers = []
@@ -236,19 +236,26 @@ class Trainer:
         return anomaly_scores
 
     def validate(self, epoch: int, epoch_metrics: dict, train_dist_anomaly_scores: dict):
-        all_auroc = []
-        all_auprc = []
         for i in range(len(self.models)):
             # print('Calculating accuracy on validation set and anomaly scores...')
             anomaly_scores, relapse_labels, user_ids = self.evaluate_ensembles(epoch, i, train_dist_anomaly_scores)
 
             # print('Calculating metrics...')
             auroc, auprc = self.calculate_metrics(i, anomaly_scores, relapse_labels, user_ids, epoch_metrics)
-            all_auroc.append(auroc)
-            all_auprc.append(auprc)
-        total_auroc = sum(all_auroc) / len(all_auroc)
-        total_auprc = sum(all_auprc) / len(all_auprc)
+
+            self.current_best_aurocs[i] = max(auroc, self.current_best_aurocs[i])
+            self.current_best_auprcs[i] = max(auprc, self.current_best_aurocs[i])
+
+
+        for i in range(len(self.models)):
+            print(f"P{str(i + 1)} AUROC: {self.current_best_aurocs[i]:.4f}, "
+                  f"AUPRC: {self.current_best_auprcs[i]:.4f}, "
+                  f"AVG: {self.current_best_avgs[i]:.4f}")
+
+        total_auroc = sum(self.current_best_aurocs) / len(self.models)
+        total_auprc = sum(self.current_best_auprcs) / len(self.models)
         total_avg = (total_auroc + total_auprc) / 2
+
         print(f'TOTAL\tAUROC: {total_auroc:.4f},  AUPRC: {total_auprc:.4f}, Total AVG: {total_avg:.4f}, '
               f'Train Loss: {np.mean(epoch_metrics["loss"]):.4f}')
 

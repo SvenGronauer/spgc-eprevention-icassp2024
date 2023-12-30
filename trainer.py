@@ -243,9 +243,17 @@ class Trainer:
             # print('Calculating metrics...')
             auroc, auprc = self.calculate_metrics(i, anomaly_scores, relapse_labels, user_ids, epoch_metrics)
 
-            self.current_best_aurocs[i] = max(auroc, self.current_best_aurocs[i])
-            self.current_best_auprcs[i] = max(auprc, self.current_best_aurocs[i])
-
+            # save best model
+            avg = (auroc + auprc) / 2
+            if avg > self.current_best_avgs[i]:
+                self.current_best_avgs[i] = max(avg, self.current_best_avgs[i])
+                self.current_best_aurocs[i] = max(auroc, self.current_best_aurocs[i])
+                self.current_best_auprcs[i] = max(auprc, self.current_best_auprcs[i])
+                os.makedirs(self.args.save_path, exist_ok=True)
+                if not os.path.exists(os.path.join(self.args.save_path, str(i))):
+                    os.mkdir(f'{self.args.save_path}/{i}')
+                torch.save(self.models[i].state_dict(),
+                           os.path.join(self.args.save_path, f'{i}/best_model.pth'))
 
         for i in range(len(self.models)):
             print(f"P{str(i + 1)} AUROC: {self.current_best_aurocs[i]:.4f}, "

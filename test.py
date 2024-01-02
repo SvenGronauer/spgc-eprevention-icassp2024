@@ -85,10 +85,10 @@ def main():
     # load checkpoints
     for i in range(len(encoders)):
         pth = os.path.join(args.load_path, str(i+1))
-        checkpoint = torch.load(os.path.join(pth, 'best_encoder.pth'))
+        checkpoint = torch.load(os.path.join(pth, 'best_encoder.pth'), map_location=torch.device('cpu'))
         encoders[i].load_state_dict(checkpoint)
         encoders[i].eval()
-        checkpoint = torch.load(os.path.join(pth, 'best_ensembles.pth'))
+        checkpoint = torch.load(os.path.join(pth, 'best_ensembles.pth'), map_location=torch.device('cpu'))
         mlps[i].load_state_dict(checkpoint)
         mlps[i].eval()
 
@@ -175,19 +175,19 @@ def main():
                     # Forward
                     features, _ = encoders[patient_id](sequence_tensor.to(device))
                     batched_features = features[None, :, :].repeat([args.ensembles, 1, 1])
-                    mean_preds = mlps[patient_id].forward(batched_features)
+                    # preds.shape = (ens_size, num_day_samples, output_dim)
+                    preds = mlps[patient_id].forward(batched_features)
+                    average_pred = torch.mean(preds, 0)
 
                     _mean = np.mean(train_dist_anomaly_scores[patient_id])
                     _max = np.max(train_dist_anomaly_scores[patient_id])
                     _min = np.min(train_dist_anomaly_scores[patient_id])
 
-                    average = torch.mean(mean_preds, 0)
-                    var_scores = (mean_preds - average) ** 2
-                    mean_var = torch.mean(var_scores).item()
+                    var_score = torch.sum((preds - average_pred) ** 2, dim=(2,))
+                    mean_var = torch.mean(torch.mean(var_score, 0)).item()
                     anomaly_score = (mean_var - _mean) / (_max - _min)
 
-                    anomaly_score = anomaly_score.item()
-
+                    anomaly_score = (np.array(anomaly_score.item()) > 0.0).astype(np.float64)
 
                     # add this to the relapse_df
                     relapse_df.loc[relapse_df['day_index'] == day_index, 'anomaly_score'] = anomaly_score
@@ -195,8 +195,10 @@ def main():
                     user_relapse_labels.append(0)
 
                 # save subfolder in submission_path
-                os.makedirs(os.path.join(args.submission_path, patient, subfolder), exist_ok=True)
-                relapse_df.to_csv(os.path.join(args.submission_path, patient, subfolder, 'submission.csv'))
+                os.makedirs(os.path.join(args.submission_path, f'patient{patient[1]}', subfolder), exist_ok=True)
+                csv_save_path = os.path.join(args.submission_path, f'patient{patient[1]}', subfolder, 'submission.csv')
+                relapse_df.to_csv(csv_save_path, index = False)
+                print(f"saved to: {csv_save_path}")
 
         user_anomaly_scores = np.array(user_anomaly_scores)
         user_relapse_labels = np.array(user_relapse_labels)

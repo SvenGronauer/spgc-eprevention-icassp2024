@@ -190,7 +190,7 @@ def main():
                     anomaly_score = (np.array(anomaly_score.item()) > 0.0).astype(np.float64)
 
                     # add this to the relapse_df
-                    relapse_df.loc[relapse_df['day_index'] == day_index, 'anomaly_score'] = anomaly_score
+                    relapse_df.loc[relapse_df['day_index'] == day_index, 'score'] = anomaly_score
                     user_anomaly_scores.append(anomaly_score)
                     user_relapse_labels.append(0)
 

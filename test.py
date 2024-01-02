@@ -42,7 +42,7 @@ def parse():
     parser.add_argument('--submission_path', type=str, help='where to save the submission files', default='/var/tmp/spgc-submission') # to get relapse labels
 
     # checkpoint
-    parser.add_argument('--load_path', type=str, help='path to root directory of models', default='/var/tmp/track1_win24_l2_d64')
+    parser.add_argument('--load_path', type=str, help='path to root directory of models')
 
     parser.add_argument('--device', type=str, help='device to use (cpu, cuda, cuda[number])', default='cpu')
 
@@ -159,13 +159,13 @@ def main():
                     if len(day_data) == window_size:
                         sequence = day_data.iloc[0:window_size]
                         sequence = sequence[data_columns].copy().to_numpy()
-                        # sequence[:, :-2] = scaler.transform(sequence[:, :-2])
+                        sequence = scalers[patient_id].transform(sequence)
                         sequences.append(sequence)
                     else:
                         for start_idx in range(0, len(day_data) - window_size, window_size//3): # 1/3 overlap
                             sequence = day_data.iloc[start_idx:start_idx + window_size]
                             sequence = sequence[data_columns].copy().to_numpy()
-                            # sequence[:, :-2] = scaler.transform(sequence[:, :-2])
+                            sequence = scalers[patient_id].transform(sequence)
                             sequences.append(sequence)
                     sequence = np.stack(sequences)
                     sequence_tensor = torch.tensor(sequence, dtype=torch.float32)

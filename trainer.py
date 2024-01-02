@@ -223,20 +223,15 @@ class Trainer:
 
             x = batch['data'].to(self.args.device)
             ensemble_head = self.mlps[i]
-            targets = batch['target'].to(self.args.device)
-            targets = torch.squeeze(targets, dim=-1)
-            batched_targets = targets[None, :, :].repeat([k, 1, 1])
-
             features, _ = self.models[i](x)
 
             batched_features = features[None, :, :].repeat([k, 1, 1])
-            # mean.shape = (ens_size, num_day_samples, output_dim)
-            mean = ensemble_head.forward(batched_features)
+            # preds.shape = (ens_size, num_day_samples, output_dim)
+            preds = ensemble_head.forward(batched_features)  #
+            average_pred = torch.mean(preds, 0)
 
-            distances = torch.sum(torch.pow(mean - batched_targets, 2), dim=(2,))
-            mean_dist = torch.mean(distances, 0)
-            var_scores = (distances - mean_dist) ** 2
-            anomaly_score = torch.mean(var_scores).item()
+            var_score = torch.sum((preds - average_pred)**2, dim=(2, ))
+            anomaly_score = torch.mean(torch.mean(var_score, 0)).item()
             anomaly_scores.append(anomaly_score)
         return anomaly_scores
 

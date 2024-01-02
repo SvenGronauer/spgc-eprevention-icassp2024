@@ -150,7 +150,7 @@ def main():
 
                     if len(day_data) < args.window_size:
                         # predict zero anomaly score for days without enough data - right in the middle of the inlier/outlier of robust covariance
-                        relapse_df.loc[relapse_df['day_index'] == day_index, 'anomaly_score'] = 0
+                        relapse_df.loc[relapse_df['day_index'] == day_index, 'score'] = 0
                         user_anomaly_scores.append(0)
                         user_relapse_labels.append(0)
                         continue

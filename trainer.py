@@ -256,9 +256,9 @@ class Trainer:
                 if not os.path.exists(os.path.join(self.args.save_path, str(i))):
                     os.mkdir(f'{self.args.save_path}/{i}')
                 torch.save(self.models[i].state_dict(),
-                           os.path.join(self.args.save_path, f'{i}/best_encoder.pth'))
+                           os.path.join(self.args.save_path, f'{i+1}/best_encoder.pth'))
                 torch.save(self.mlps[i].state_dict(),
-                           os.path.join(self.args.save_path, f'{i}/best_ensembles.pth'))
+                           os.path.join(self.args.save_path, f'{i+1}/best_ensembles.pth'))
 
         for i in range(len(self.models)):
             print(f"P{str(i + 1)} AUROC: {self.current_best_aurocs[i]:.4f}, "

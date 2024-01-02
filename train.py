@@ -36,6 +36,7 @@ def parse():
     parser.add_argument('--input_features', type=int, default=8)
     parser.add_argument('--output_dim', type=int, default=2)
     parser.add_argument('--d_model', type=int, default=32)
+    parser.add_argument('--dim_feedforward_encoder', type=int, default=2048)
     parser.add_argument('--nhead', type=int, default=8)
     parser.add_argument('--nlayers', type=int, default=2)
 
@@ -88,6 +89,11 @@ def main():
                                        dataset_path=args.dataset_path,
                                        mode='train', window_size=args.window_size, stride=args.stride, patient=patient)
         train_datasets.append(train_dataset)
+        # save scaler as pkl
+        patient_individual_path = os.path.join(args.save_path, patient[1])
+        os.makedirs(patient_individual_path, exist_ok=True)
+        with open(f'{patient_individual_path}/scaler.pkl', 'wb') as f:
+            pickle.dump(train_dataset.scaler, f)
 
         valid_datasets.append(PatientDataset(features_path=args.features_path,
                                        dataset_path=args.dataset_path,

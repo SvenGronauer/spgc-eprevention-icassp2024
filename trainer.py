@@ -7,6 +7,17 @@ import os
 from model import EnsembleLinear
 
 
+def create_ensemble_mlp(args):
+    m = nn.Sequential(
+                EnsembleLinear(args.d_model,args.d_model,args.ensembles),
+                nn.ReLU(),
+                EnsembleLinear(args.d_model,args.d_model,args.ensembles),
+                nn.ReLU(),
+                EnsembleLinear(args.d_model,args.output_dim,args.ensembles),
+    )
+    m.to(args.device)
+    return m
+
 class Trainer:
     ''' Class to train the classifier '''
 
@@ -27,15 +38,7 @@ class Trainer:
         self.optimizers = []
         for i in range(len(self.models)):
 
-            ensemble_head = nn.Sequential(
-                EnsembleLinear(self.args.d_model,self.args.d_model,self.args.ensembles),
-                nn.ReLU(),
-                EnsembleLinear(self.args.d_model,self.args.d_model,self.args.ensembles),
-                nn.ReLU(),
-                EnsembleLinear(self.args.d_model,self.args.output_dim,self.args.ensembles),
-            )
-
-            ensemble_head.to(self.args.device)
+            ensemble_head = create_ensemble_mlp(self.args)
 
             self.mlps.append(ensemble_head)
             ps = ensemble_head.parameters()
@@ -253,7 +256,9 @@ class Trainer:
                 if not os.path.exists(os.path.join(self.args.save_path, str(i))):
                     os.mkdir(f'{self.args.save_path}/{i}')
                 torch.save(self.models[i].state_dict(),
-                           os.path.join(self.args.save_path, f'{i}/best_model.pth'))
+                           os.path.join(self.args.save_path, f'{i}/best_encoder.pth'))
+                torch.save(self.mlps[i].state_dict(),
+                           os.path.join(self.args.save_path, f'{i}/best_ensembles.pth'))
 
         for i in range(len(self.models)):
             print(f"P{str(i + 1)} AUROC: {self.current_best_aurocs[i]:.4f}, "

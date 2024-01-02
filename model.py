@@ -116,7 +116,7 @@ class TransformerClassifier(nn.Module):
             n_head=8,
             dropout_encoder=0.2,
             dropout_pos_enc=0.1,
-            dim_feedforward_encoder=2048,
+            dim_feedforward_encoder=256,
             num_patients=10
         )
 

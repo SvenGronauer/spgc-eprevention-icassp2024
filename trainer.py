@@ -1,3 +1,5 @@
+import pickle
+
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -174,13 +176,13 @@ class Trainer:
             features, _ = self.models[i](x)
 
             batched_features = features[None, :, :].repeat([k, 1, 1])
-            # mean.shape = (ens_size, num_day_samples, output_dim)
-            mean = ensemble_head.forward(batched_features)
+            # preds.shape = (ens_size, num_day_samples, output_dim)
+            preds = ensemble_head.forward(batched_features)  #
+            average_pred = torch.mean(preds, 0)
 
-            distances = torch.sum(torch.pow(mean - targets, 2), dim=(2, ))
-            mean_dist = torch.mean(distances, 0)
-            var_scores = (distances - mean_dist)**2
-            mean_var = torch.mean(var_scores).item()
+            var_score = torch.sum((preds - average_pred)**2, dim=(2, ))
+            # var_scores = (distances - average_pred)**2
+            mean_var = torch.mean(torch.mean(var_score, 0)).item()
             anomaly_score = (mean_var - _mean) / (_max - _min)
 
             anomaly_scores.append(anomaly_score)
@@ -208,7 +210,7 @@ class Trainer:
         auprc = sklearn.metrics.auc(recall, precision)
 
         avg = (auroc + auprc) / 2
-        print(f'\tUSER: {user}, AUROC: {auroc:.4f}, AUPRC: {auprc:.4f}, AVG: {avg:.4f}')
+        # print(f'\tUSER: {user}, AUROC: {auroc:.4f}, AUPRC: {auprc:.4f}, AVG: {avg:.4f}')
         return auroc, auprc
 
     def get_train_dist_anomaly_scores(self, epoch: int, i: int):
@@ -253,12 +255,14 @@ class Trainer:
                 self.current_best_aurocs[i] = max(auroc, self.current_best_aurocs[i])
                 self.current_best_auprcs[i] = max(auprc, self.current_best_auprcs[i])
                 os.makedirs(self.args.save_path, exist_ok=True)
-                if not os.path.exists(os.path.join(self.args.save_path, str(i))):
+                if not os.path.exists(os.path.join(self.args.save_path, str(i+1))):
                     os.mkdir(f'{self.args.save_path}/{i}')
                 torch.save(self.models[i].state_dict(),
                            os.path.join(self.args.save_path, f'{i+1}/best_encoder.pth'))
                 torch.save(self.mlps[i].state_dict(),
                            os.path.join(self.args.save_path, f'{i+1}/best_ensembles.pth'))
+                with open(os.path.join(self.args.save_path, 'train_dist_anomaly_scores.pkl'), 'wb') as f:
+                    pickle.dump(train_dist_anomaly_scores, f)
 
         for i in range(len(self.models)):
             print(f"P{str(i + 1)} AUROC: {self.current_best_aurocs[i]:.4f}, "

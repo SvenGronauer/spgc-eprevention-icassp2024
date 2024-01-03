@@ -251,7 +251,7 @@ class Trainer:
                 self.current_best_auprcs[i] = auprc
                 os.makedirs(self.args.save_path, exist_ok=True)
                 if not os.path.exists(os.path.join(self.args.save_path, str(i+1))):
-                    os.mkdir(f'{self.args.save_path}/{i}')
+                    os.mkdir(f'{self.args.save_path}/{i+1}')
                 torch.save(self.models[i].state_dict(),
                            os.path.join(self.args.save_path, f'{i+1}/best_encoder.pth'))
                 torch.save(self.mlps[i].state_dict(),

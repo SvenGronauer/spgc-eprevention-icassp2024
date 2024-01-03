@@ -25,7 +25,7 @@ def parse():
     parser = argparse.ArgumentParser()
 
     # transformer parameters
-    parser.add_argument('--window_size', type=int, default=48)
+    parser.add_argument('--window_size', type=int, default=24)
     parser.add_argument('--input_features', type=int, default=8)
     parser.add_argument('--output_dim', type=int, default=2)
     parser.add_argument('--d_model', type=int, default=64)
@@ -105,19 +105,20 @@ def main():
     random_auprc = []
 
     for patient in os.listdir(args.features_path):
+        if patient == ".DS_Store":
+            continue
         patient_dir = os.path.join(args.features_path, patient)
 
         user_relapse_labels = []
         user_anomaly_scores = []
         relapse_shapes = 0
-        if patient == ".DS_Store":
-            continue
+
         patient_id = int(patient[1:]) - 1
         if patient_id >= len(encoders):
             continue
 
         for subfolder in os.listdir(patient_dir):
-            if (args.mode == 'val' and 'val' in subfolder) or (args.mode == 'test' and 'test' in subfolder):
+            if (args.mode == 'val' and 'val' in subfolder and subfolder.endswith('val')) or (args.mode == 'test' and 'test' in subfolder):
                 subfolder_dir = os.path.join(patient_dir, subfolder)
                 file = 'features_stretched_w_steps.csv'
                 file_path = os.path.join(subfolder_dir, file)
@@ -132,27 +133,32 @@ def main():
                     sin_t, cos_t = calculate_sincos_from_minutes(mins)
                     df['sin_t'] = sin_t
                     df['cos_t'] = cos_t
-            
-                relapse_df = pd.read_csv(os.path.join(args.dataset_path, patient, subfolder, 'relapses.csv'))
-                # IMPORTANT - drop last row as it was falsely added by the organizers
-                relapse_df = relapse_df.iloc[:-1]
+
+                if args.mode == "test":
+                    relapse_df = pd.read_csv(os.path.join(args.dataset_path, patient, subfolder, 'relapses.csv'))
+                    # IMPORTANT - drop last row as it was falsely added by the organizers
+                    relapse_df = relapse_df.iloc[:-1]
+                else:
+                    relapse_data_path = os.path.join(args.features_path, patient, subfolder, 'relapse_stretched.csv')
+                    relapse_df = pd.read_csv(relapse_data_path)
 
                 # count 0 and 1 to calculate random chance
                 if args.mode != 'test':
                     relapse_shapes += relapse_df['relapse'].sum()
 
-                day_indices = relapse_df['day_index'].unique() # get all day indices for this patient
+                DAY_INDEX = 'day_index' if args.mode == "test" else 'day'
+                day_indices = relapse_df[DAY_INDEX].unique() # get all day indices for this patient
 
                 for day_index in day_indices:
-                    day_data = df[df['day_index'] == day_index].copy()
+                    day_data = df[df[DAY_INDEX] == day_index].copy()
 
-                    # relapse_label = relapse_df[relapse_df['day_index'] == day_index]['relapse'].to_numpy()[0]
+                    relapse_label = relapse_df[relapse_df[DAY_INDEX] == day_index]['relapse'].to_numpy()[0]
 
                     if len(day_data) < args.window_size:
                         # predict zero anomaly score for days without enough data - right in the middle of the inlier/outlier of robust covariance
-                        relapse_df.loc[relapse_df['day_index'] == day_index, 'score'] = 0
+                        relapse_df.loc[relapse_df[DAY_INDEX] == day_index, 'score'] = 0
                         user_anomaly_scores.append(0)
-                        user_relapse_labels.append(0)
+                        user_relapse_labels.append(relapse_label)
                         continue
                     
                     sequences = []
@@ -190,29 +196,22 @@ def main():
                     anomaly_score = (np.array(anomaly_score.item()) > 0.0).astype(np.float64)
 
                     # add this to the relapse_df
-                    relapse_df.loc[relapse_df['day_index'] == day_index, 'score'] = anomaly_score
+                    relapse_df.loc[relapse_df[DAY_INDEX] == day_index, 'score'] = anomaly_score
                     user_anomaly_scores.append(anomaly_score)
-                    user_relapse_labels.append(0)
+                    user_relapse_labels.append(relapse_label)
 
                 # save subfolder in submission_path
-                os.makedirs(os.path.join(args.submission_path, f'patient{patient[1]}', subfolder), exist_ok=True)
-                csv_save_path = os.path.join(args.submission_path, f'patient{patient[1]}', subfolder, 'submission.csv')
-                relapse_df.to_csv(csv_save_path, index = False)
-                print(f"saved to: {csv_save_path}")
+                if args.mode == "test":
+                    os.makedirs(os.path.join(args.submission_path, f'patient{patient[1]}', subfolder), exist_ok=True)
+                    csv_save_path = os.path.join(args.submission_path, f'patient{patient[1]}', subfolder, 'submission.csv')
+                    relapse_df.to_csv(csv_save_path, index = False)
+                    print(f"saved to: {csv_save_path}")
 
         user_anomaly_scores = np.array(user_anomaly_scores)
         user_relapse_labels = np.array(user_relapse_labels)
 
         # if mode is not test, calculate scores
         if args.mode != 'test':
-
-            # create df per user if you want to see per user anomaly scores/relapses
-            # user_df = pd.DataFrame()
-            # user_df['anomaly_score'] = user_anomaly_scores
-            # user_df['relapse'] = user_relapse_labels
-            # # sort by anomaly score
-            # user_df = user_df.sort_values(by=['anomaly_score'], ascending=False)
-            # user_df.to_csv("{}.csv".format(patient), index=False)
 
             # Compute ROC Curve
             precision, recall, _ = sklearn.metrics.precision_recall_curve(user_relapse_labels, user_anomaly_scores)
@@ -224,23 +223,17 @@ def main():
 
             # # Compute AUPRC
             auprc = sklearn.metrics.auc(recall, precision)
-
-            random_auroc.append(0.5)
-
-            random_auprc.append(user_relapse_labels.mean())
             all_auroc.append(auroc)
             all_auprc.append(auprc)
             # auprc = pr_auc_score(user_relapse_labels, user_anomaly_scores)
-            print(f'USER: {patient}, AUROC: {auroc:.4f}, AUPRC: {auprc:.4f}, Random AUPRC: {user_relapse_labels.mean():.4f}')
+            print(f'USER: {patient}, AUROC: {auroc:.4f}, AUPRC: {auprc:.4f}, AVG: {(auprc+auroc)/2:.4f}')
 
     if args.mode != 'test':
 
         total_auroc = sum(all_auroc)/len(all_auroc)
         total_auprc = sum(all_auprc)/len(all_auprc)
-        random_auroc = sum(random_auroc)/len(random_auroc)
-        random_auprc = sum(random_auprc)/len(random_auprc)
         total_avg = (total_auroc + total_auprc) / 2
-        print(f'Total AUROC: {total_auroc:.4f}, Total AUPRC: {total_auprc:.4f}, Random AVG: {total_avg:.4f}, Random AUROC: {random_auroc:.4f}, Random AUPRC: {random_auprc:.4f}, Ideal AVG: {(random_auroc + random_auprc)/2:.4f}')
+        print(f'Total AUROC: {total_auroc:.4f}, Total AUPRC: {total_auprc:.4f}, Total AVG: {total_avg:.4f}')
 
 
 if __name__ == '__main__':

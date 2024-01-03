@@ -246,9 +246,9 @@ class Trainer:
             # save best model
             avg = (auroc + auprc) / 2
             if avg > self.current_best_avgs[i]:
-                self.current_best_avgs[i] = max(avg, self.current_best_avgs[i])
-                self.current_best_aurocs[i] = max(auroc, self.current_best_aurocs[i])
-                self.current_best_auprcs[i] = max(auprc, self.current_best_auprcs[i])
+                self.current_best_avgs[i] = avg
+                self.current_best_aurocs[i] = auroc
+                self.current_best_auprcs[i] = auprc
                 os.makedirs(self.args.save_path, exist_ok=True)
                 if not os.path.exists(os.path.join(self.args.save_path, str(i+1))):
                     os.mkdir(f'{self.args.save_path}/{i}')

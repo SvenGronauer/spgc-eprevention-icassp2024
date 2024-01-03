@@ -76,11 +76,9 @@ def main():
     encoders = [TransformerClassifier(vars(args)).to(device) for _ in range(args.num_patients)]
     mlps = [create_ensemble_mlp(args) for _ in range(args.num_patients)]
 
-    with open(os.path.join(args.load_path, "train_dist_anomaly_scores.pkl"), 'rb') as f:
-        train_dist_anomaly_scores = pickle.load(f)
-
     # dataset scalers
     scalers = []
+    train_dists = []
 
     # load checkpoints
     for i in range(len(encoders)):
@@ -96,6 +94,9 @@ def main():
         with open(os.path.join(pth, "scaler.pkl"), 'rb') as f:
             scaler = pickle.load(f)
             scalers.append(scaler)
+        with open(os.path.join(pth, "train_dist_anomaly_scores.pkl"), 'rb') as f:
+            train_dist_anomaly_scores = pickle.load(f)
+            train_dists.append(train_dist_anomaly_scores)
     torch.set_grad_enabled(False)
 
     all_auroc = []
@@ -116,6 +117,8 @@ def main():
         patient_id = int(patient[1:]) - 1
         if patient_id >= len(encoders):
             continue
+
+        train_dist_anomaly_scores = train_dists[patient_id]
 
         for subfolder in os.listdir(patient_dir):
             if (args.mode == 'val' and 'val' in subfolder and subfolder.endswith('val')) or (args.mode == 'test' and 'test' in subfolder):
@@ -193,8 +196,6 @@ def main():
                     mean_var = torch.mean(torch.mean(var_score, 0)).item()
                     anomaly_score = (mean_var - _mean) / (_max - _min)
 
-                    anomaly_score = (np.array(anomaly_score.item()) > 0.0).astype(np.float64)
-
                     # add this to the relapse_df
                     relapse_df.loc[relapse_df[DAY_INDEX] == day_index, 'score'] = anomaly_score
                     user_anomaly_scores.append(anomaly_score)
@@ -207,7 +208,7 @@ def main():
                     relapse_df.to_csv(csv_save_path, index = False)
                     print(f"saved to: {csv_save_path}")
 
-        user_anomaly_scores = np.array(user_anomaly_scores)
+        user_anomaly_scores = (np.array(user_anomaly_scores) > 0.0).astype(np.float64)
         user_relapse_labels = np.array(user_relapse_labels)
 
         # if mode is not test, calculate scores

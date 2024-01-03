@@ -256,7 +256,8 @@ class Trainer:
                            os.path.join(self.args.save_path, f'{i+1}/best_encoder.pth'))
                 torch.save(self.mlps[i].state_dict(),
                            os.path.join(self.args.save_path, f'{i+1}/best_ensembles.pth'))
-                with open(os.path.join(self.args.save_path, 'train_dist_anomaly_scores.pkl'), 'wb') as f:
+                train_dist_path = os.path.join(self.args.save_path, f'{i+1}/train_dist_anomaly_scores.pkl')
+                with open(train_dist_path, 'wb') as f:
                     pickle.dump(train_dist_anomaly_scores, f)
 
         for i in range(len(self.models)):

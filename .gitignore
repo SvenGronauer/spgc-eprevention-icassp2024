@@ -9,9 +9,9 @@
 ## SPGC specific directories
 
 data/track_1_features
-data/track_1_new_features
+# data/track_1_new_features
 data/track_2_features
-data/track_2_new_features
+# data/track_2_new_features
 
 
 ## PyTorch

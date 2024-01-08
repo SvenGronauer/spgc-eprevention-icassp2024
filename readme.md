@@ -9,12 +9,52 @@
 This repository holds the source code for the baselines of the `The 2nd e-Prevention challenge: Psychotic and Non-Psychotic Relapse Detection using Wearable-Based Digital Phenotyping` organized in context of [ICASSP 2024](https://2024.ieeeicassp.org/). The Challenge website can be found in [https://robotics.ntua.gr/icassp2024-eprevention-spgc/](https://robotics.ntua.gr/icassp2024-eprevention-spgc/).
 
 
-### Registration
-To register for the challenge and get access to the challenge data participants are required to send an e-mail to the below contacts with the team name, the names of their team members, as well as their emails and affiliations.
+### Installation
+Create a new conda environment:
 
-- **P. P. Filntisis**, School of ECE (CVSP / IRAL Group), National Technical Univ. of Athens, [filby@central.ntua.gr](mailto:filby@central.ntua.gr)
+```bash
+conda create -n spgc python=3.9
+conda activate spgc
+```
 
-- **N. Efthymiou**, School of ECE (CVSP / IRAL Group), National Technical Univ. of Athens, [nefthymiou@central.ntua.gr](mailto:nefthymiou@central.ntua.gr)
+Install the requirements:
+
+```bash
+pip install -r requirements.txt
+```
+
+#### Data
+Features are already pre-processed for you and saved into the directory: `data/track_2_features`. 
+
+### Run Training (on Track 2)
+
+```
+python train.py --cores 8 --save_path /home/YOUR-NAME/track2/
+```
+Note: `--cores X` sets the number of CPU cores used for data loading. 
+
+### Run Training (on Track 1)
+
+You are on default branch for track 2. However, you can train the ensemble model also on track 1 via:
+```bash
+python train.py --num_patients 9 --window_size 24 --features_path data/track_1_new_features/ --dataset_path data/track_1/ --cores 8 --save_path /home/YOUR-NAME/track2/
+```
+
+### Find Anomalies
+To find the anomalies for track1 and create a submission file run the following command:
+
+```bash
+python test.py --num_patients 8 --features_path data/track_2_new_features/ --dataset_path data/track_2/ --load_path /var/tmp/fred02/ga87zej/track2/run1 --submission_path /var/tmp/spgc/track2/run1
+```
+
+you can also use the validation set in order to calculate the official performance of the model (taking into account all days):
+
+```bash
+python test.py --num_patients 8 --features_path data/track_2_new_features/ --dataset_path data/track_2/ --load_path /var/tmp/fred02/ga87zej/track2/run1 --submission_path /var/tmp/spgc/track2/run1 --mode val
+```
+
+(similarly for track1).
+
 
 ### Tracks
 Participants will be evaluated on their ability to use this data to extract digital phenotypes that can effectively quantify behavioral patterns and traits. This will be assessed across two distinct tasks: 
@@ -46,30 +86,6 @@ The dataset for each track has the following format:
 │   │   │   ├── ...
 │   │   ├── patient2
 ```
-
-### HPC Data Setup @ LDV
-
-1) Change directory to: `$cd /var/tmp/YOUR-NAME`
-
-2) Download data set from NextCloud (>100 GB) via
-    ```
-    curl "https://nextcloud.cit.tum.de/index.php/s/g3ndP8DXqnSycab/download" --output icassp2024-data.zip
-    ```
-
-3) Unzip via: 
-   ```
-   unzip icassp2024-data.zip
-   ```
-
-4) Create symbolic link for track 1:
-   ``` 
-    ln -s /var/tmp/YOUR-NAME/spgc-eprevention-icassp2024/track_1 YOUR-GIT-DIRECTORY/spgc-eprevention-icassp2024/data 
-   ```
-   
-   Create symbolic link for track 2:
-   ``` 
-    ln -s /var/tmp/YOUR-NAME/spgc-eprevention-icassp2024/track_2 YOUR-GIT-DIRECTORY/spgc-eprevention-icassp2024/data 
-   ```
 
 #### Dataset Information
 
@@ -218,77 +234,7 @@ and for Track 2 (validation set):
 
 
 
-### Running the baselines
-#### Installation
-Create a new conda environment:
 
-```bash
-conda create -n spgc python=3.9
-conda activate spgc
-```
-
-next, install the requirements:
-
-```bash
-pip install -r requirements.txt
-```
-
-### Data
-Download from NextCloud (see `HPC Data Setup` above) and put them inside the `data` folder.
-
-#### Feature extraction
-To extract the features from the raw data for track1 run the following command:
-
-```bash
-python extract_features.py --dataset_path data/track1/ --out_features_path data/track1_features/
-```
-
-and for track2 run:
-
-```bash
-python extract_features.py --dataset_path data/track2/ --out_features_path data/track2_features/
-```
-
-#### Download pre-processed dataset @ LDV
-
-To save time, you can download the preprocessed data set from NextCloud via
-
-    curl "https://nextcloud.cit.tum.de/index.php/s/gEaqnf4zfy2zpRZ/download" --output icassp2024-data-preprocessed.zip
-    
-
-Unzip as in [HPC Data Setup]((#hpc-data-setup-@-ldv)) above.
-
-Note that the pre-processed features only include `gyr`, `hrm`and `linacc` data, but not `sleep` and `step`. 
-
-#### Train the Transformer Encoder classifier
-To train the Transformer Encoder classifier for track1 run the following command:
-
-```bash
-python train.py --num_patients 9 --window_size 24 --save_path track1_win24_l2_d32 --features_path data/track_1_features/ --dataset_path data/track_1/ --d_model 32 --nlayers 2
-```
-
-and for track 2 run:
-
-```bash
-python train.py --num_patients 8 --window_size 48 --save_path track2_win48_l2_d32 --features_path data/track_2_features/ --dataset_path data/track_2/ --d_model 32 --nlayers 2
-```
-
-During training the model also at each epoch trains the OneClassSVMs and outputs metrics for the validation set. Note that the validation metrics here do not correspond to the official metrics of the challenge (because we ignore days with limited/missing data), but are used only for finding the best model which will be used subsequently for testing and creating the submission.
-
-#### Find anomalies
-To find the anomalies for track1 and create a submission file run the following command:
-
-```bash
-python test.py --num_patients 9 --window_size 24 --features_path data/track1_features --dataset_path data/track1 --load_path track1_win24_l2_d32/best_model.pth --scaler_path track1_win24_l2_d32/scaler.pkl  --submission_path track1_subm --mode test
-```
-
-you can also use the validation set in order to calculate the official performance of the model (taking into account all days):
-
-```bash
-python test.py --num_patients 9 --window_size 24 --features_path data/track1_features --dataset_path data/track2 --load_path track1_win24_l2_d32/best_model.pth --scaler_path track1_win24_l2_d32/scaler.pkl  --submission_path track1_subm --mode val
-```
-
-and similarly for track2.
 
 ### References
 

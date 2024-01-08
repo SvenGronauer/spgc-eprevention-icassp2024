@@ -24,15 +24,16 @@ Features are already pre-processed for you and saved into the directory: `data/t
 
 You are on default branch for track 2. However, you can train the ensemble model also on track 1 via:
 ```bash
-python train.py --num_patients 9 --window_size 24 --features_path data/track_1_new_features/ --dataset_path data/track_1/ --cores 8 --save_path /home/YOUR-NAME/track2/
+python train.py --num_patients 9 --window_size 24 --features_path data/track_1_new_features/ --dataset_path data/track_1/ --save_path /home/YOUR-NAME/track1/
 ```
-Note: `--cores X` sets the number of CPU cores used for data loading. 
+
+Note: if you get an `AssertionError: Torch not compiled with CUDA enabled`, then add the argument `--device cpu` 
 
 ### Run Training (on Track 2)
 You are on default branch for track 1. However, you can train also on track 2 via:
 
 ```
-python train.py --cores 8 --features_path data/track_2_new_features/ --dataset_path data/track_2/ --save_path /home/YOUR-NAME/track1/
+python train.py --features_path data/track_2_new_features/ --dataset_path data/track_2/ --save_path /home/YOUR-NAME/track1/
 ```
 
 ## Approach

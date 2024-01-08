@@ -1,6 +1,40 @@
 
 # SPGC ICASSP 2024 Challenge
 
+## Installation
+Create a new conda environment:
+
+```bash
+conda create -n spgc python=3.9
+conda activate spgc
+```
+
+Install the requirements:
+
+```bash
+pip install -r requirements.txt
+```
+
+#### Data
+Features are already pre-processed for you and saved into the directory: `data/track_1_features`. 
+
+
+
+### Run Training (on Track 1)
+
+You are on default branch for track 2. However, you can train the ensemble model also on track 1 via:
+```bash
+python train.py --num_patients 9 --window_size 24 --features_path data/track_1_new_features/ --dataset_path data/track_1/ --cores 8 --save_path /home/YOUR-NAME/track2/
+```
+Note: `--cores X` sets the number of CPU cores used for data loading. 
+
+### Run Training (on Track 2)
+You are on default branch for track 1. However, you can train also on track 2 via:
+
+```
+python train.py --cores 8 --features_path data/track_2_new_features/ --dataset_path data/track_2/ --save_path /home/YOUR-NAME/track1/
+```
+
 ## Approach
 Changes made to the baseline:
 

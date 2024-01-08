@@ -155,7 +155,10 @@ def main():
                 for day_index in day_indices:
                     day_data = df[df[DAY_INDEX] == day_index].copy()
 
-                    relapse_label = relapse_df[relapse_df[DAY_INDEX] == day_index]['relapse'].to_numpy()[0]
+                    if args.mode != "test":
+                        relapse_label = relapse_df[relapse_df[DAY_INDEX] == day_index]['relapse'].to_numpy()[0]
+                    else:
+                        relapse_label = 0
 
                     if len(day_data) < args.window_size:
                         # predict zero anomaly score for days without enough data - right in the middle of the inlier/outlier of robust covariance
@@ -195,6 +198,7 @@ def main():
                     var_score = torch.sum((preds - average_pred) ** 2, dim=(2,))
                     mean_var = torch.mean(torch.mean(var_score, 0)).item()
                     anomaly_score = (mean_var - _mean) / (_max - _min)
+                    anomaly_score = (anomaly_score > 0.0).astype(np.float64)
 
                     # add this to the relapse_df
                     relapse_df.loc[relapse_df[DAY_INDEX] == day_index, 'score'] = anomaly_score

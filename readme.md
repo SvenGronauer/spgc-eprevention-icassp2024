@@ -63,6 +63,21 @@ $$
 \end{cases}
 $$
 
+## Installation
+Create a new conda environment:
+
+```bash
+conda create -n spgc python=3.9
+conda activate spgc
+```
+
+Install the requirements:
+
+```bash
+pip install -r requirements.txt
+```
+
+
 ## Training
 
 For reproducing our results, please checkout the branch `track1` or `track2` and follow the training instructions given in the respective `README.md`. 

@@ -1,0 +1,10 @@
+patient_id,,age,gender,maritial_status,birth_place,occupation,educational_level,diagnosis,year_illness,birth_complications,family_psychiatric_history,smoking,smoking_amount,smoking_past_years_use,alcohol_consumption,alcohol_consumption_amount,alcohol_past_years_use,cannabis_user,cannabis_amount,cannabis_past_years_use,other_substances,other_substances_amount,other_substances_past_years_use,dominant_hand,smartwatch_hand,treatment_compliance,growth_disorder
+P1,,30, Female, Married, Urban, White-collar worker,16, Brief Psyhcotic Episode,3,FALSE,FALSE,TRUE,15,13,FALSE,0,0,FALSE,0,0,0,0,0, Left, Left, Moderate,FALSE
+P2,,36, Male, Single, Urban, Freelancer,16, Schizophreniform Disorder,1,FALSE,TRUE,FALSE,0,0,FALSE,0,0,FALSE,0,0,0,0,0, Left, Left, Good,FALSE
+P3,,35, Female, Single, Urban, Freelancer,17, Bipolar I Disorder,10,TRUE,TRUE,TRUE,30,17,TRUE, Οccasional Use,0,FALSE,0,0,0,0,0, Right, Left, Very Good,FALSE
+P4,,36, Female, Single, Rural, Unemployed,12, Bipolar I Disorder,13,FALSE,FALSE,TRUE,3,12,FALSE,0,0,FALSE,0,0,0,0,0, Right, Left, Very Good,FALSE
+P5,,40, Female, Married, Urban, White-collar worker,16, Bipolar II Disorder,13,FALSE,TRUE,TRUE,10,20,FALSE,0,0,FALSE,0,0,0,0,0, Right, Left, Very Good,FALSE
+P6,,20, Female, Single, Urban, Student,12, Bipolar I Disorder,1,TRUE,FALSE,TRUE,20,7,TRUE, Οccasional Use,0,FALSE,0,4, Stimulants,0,2, Left, Left, Very Good,FALSE
+P7,,19, Male, Single, Urban, Student,12, Schizophrenia,1,FALSE,FALSE,FALSE,0,0,FALSE,0,0,FALSE,0,0,0,0,0, Right, Left, Moderate,FALSE
+P8,,33, Male, Single, Urban, Unemployed,16, Bipolar I Disorder,12,FALSE,TRUE,FALSE,0,11,FALSE,0,0,FALSE,0,1,0,0,0, Right, Left, Very Good,FALSE
+P9,,27, Female, Single, Urban, Unemployed,16, Bipolar I Disorder,1,FALSE,FALSE,TRUE,20,10,TRUE, Οccasional Use,0,FALSE,0,0.5,0,0,0, Right, Left, Good,FALSE

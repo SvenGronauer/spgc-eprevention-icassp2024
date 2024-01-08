@@ -31,27 +31,27 @@ def parse():
     parser.add_argument('--ensembles', type=int, default=5)
 
     # transformer parameters
-    parser.add_argument('--window_size', type=int, default=48)
+    parser.add_argument('--window_size', type=int, default=24)
     parser.add_argument('--stride', type=int, default=12)
     parser.add_argument('--input_features', type=int, default=8)
     parser.add_argument('--output_dim', type=int, default=2)
-    parser.add_argument('--d_model', type=int, default=32)
+    parser.add_argument('--d_model', type=int, default=64)
     parser.add_argument('--dim_feedforward_encoder', type=int, default=2048)
     parser.add_argument('--nhead', type=int, default=8)
     parser.add_argument('--nlayers', type=int, default=2)
 
     # num_patients - 10 for track 1, 9 for track 2
-    parser.add_argument('--num_patients', type=int, default=2)
+    parser.add_argument('--num_patients', type=int, default=8)
 
     # input paths
-    parser.add_argument('--features_path', type=str, help='features to use')
-    parser.add_argument('--dataset_path', type=str, help='features to use') # to get relapse labels
+    parser.add_argument('--features_path', default="data/track_2_new_features/", type=str, help='features to use')
+    parser.add_argument('--dataset_path', default="data/track_2/", type=str, help='features to use') # to get relapse labels
 
     # learning params
     parser.add_argument('--learning_rate', type=float, help='learning rate', default=1e-3)
     parser.add_argument('--weight_decay', type=float, help='L2 regularization weight', default=5e-4)
     parser.add_argument('--batch_size', type=int, help='batch size', default=16)
-    parser.add_argument('--epochs', type=int, help='number of training epochs', default=10)
+    parser.add_argument('--epochs', type=int, help='number of training epochs', default=50)
 
     # checkpoint
     parser.add_argument('--save_path', type=str, help='path to save model checkpoints', default='checkpoints')
